@@ -1,0 +1,77 @@
+# ==========================================
+# 默认忽略根目录及所有未指定内容
+# ==========================================
+/*
+
+# 仅允许 .gitignore、LinuxServer 与 Windows 远程客户端源码
+!/.gitignore
+!/README.md
+!/.github/
+!/.github/**
+!/LinuxServer/
+!/WindowsRemote/
+!/WindowsRemote/**
+
+# ==========================================
+# LinuxServer 内部需忽略的目录与大型文件
+# ==========================================
+/LinuxServer/DreadHunger/
+/LinuxServer/Engine/
+/LinuxServer/CXXHeaderDump/
+/LinuxServer/windos-CXXHeaderDump/
+/LinuxServer/Patches/
+/LinuxServer/.claude/
+/LinuxServer/.manager_backups/
+.manager_backups/
+/LinuxServer/.runtime/
+/LinuxServer/.venv/
+/LinuxServer/deploy_config.json
+/LinuxServer/gm_commands.json
+/LinuxServer/GM控制台/gm_announce.json
+/LinuxServer/GM控制台/gm_blacklist_check_token.txt
+/LinuxServer/Manifest_DebugFiles_Linux.txt
+/LinuxServer/Manifest_NonUFSFiles_Linux.txt
+/LinuxServer/Linux 插件/备份/
+/LinuxServer/开服器/.dread_hunger_manager_state.json
+/LinuxServer/开服器/manager_config.json
+
+# 二进制、包、临时缓存与开发文件
+*.exe
+*.dll
+*.so
+*.debug
+*.sym
+*.pdb
+*.pak
+*.sig
+*.tar.gz
+*.zip
+*.rar
+*.7z
+*_extracted/
+**/回收站/
+
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyz
+build/
+dist/
+.pyinstaller-build/
+*.egg-info/
+.venv/
+venv/
+env/
+.idea/
+.vscode/
+.cursor/
+*.suo
+*.user
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
+output.log
+DreadHunger.log
+*.tmp
+*.bak

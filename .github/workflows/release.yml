@@ -1,0 +1,107 @@
+name: Build release assets
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install PyInstaller
+        run: python -m pip install pyinstaller
+      - name: Build Windows clients
+        shell: pwsh
+        run: |
+          ./WindowsRemote/build_exe.ps1
+          ./WindowsRemote/build_quick_join.ps1
+          Get-FileHash ./WindowsRemote/dist/*.exe -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  $($_.Path | Split-Path -Leaf)" } |
+            Set-Content -Encoding ascii ./WindowsRemote/dist/windows-sha256.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-clients
+          path: |
+            WindowsRemote/dist/*.exe
+            WindowsRemote/dist/windows-sha256.txt
+          if-no-files-found: error
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate Python and JavaScript sources
+        run: |
+          python3 -m py_compile \
+            LinuxServer/dhctl.py \
+            LinuxServer/frida_loader.py \
+            "LinuxServer/开服器/DreadHungerLinuxManager.py" \
+            "LinuxServer/GM控制台/gm_console.py"
+          find "LinuxServer/Linux 插件" -maxdepth 1 -type f -name '*.js' -print0 |
+            xargs -0 -n1 node --check
+          python3 -m unittest discover -s LinuxServer/tests -p 'test_*.py'
+      - name: Package Linux toolkit
+        run: |
+          mkdir -p release-stage/DreadHunger-Linux-Toolkit
+          cp README.md release-stage/DreadHunger-Linux-Toolkit/
+          cp -R LinuxServer release-stage/DreadHunger-Linux-Toolkit/
+          rm -rf \
+            release-stage/DreadHunger-Linux-Toolkit/LinuxServer/DreadHunger \
+            release-stage/DreadHunger-Linux-Toolkit/LinuxServer/Engine \
+            release-stage/DreadHunger-Linux-Toolkit/LinuxServer/CXXHeaderDump \
+            release-stage/DreadHunger-Linux-Toolkit/LinuxServer/Patches \
+            release-stage/DreadHunger-Linux-Toolkit/LinuxServer/.venv \
+            release-stage/DreadHunger-Linux-Toolkit/LinuxServer/.runtime \
+            "release-stage/DreadHunger-Linux-Toolkit/LinuxServer/Linux 插件/备份"
+          rm -f \
+            release-stage/DreadHunger-Linux-Toolkit/LinuxServer/deploy_config.json \
+            release-stage/DreadHunger-Linux-Toolkit/LinuxServer/gm_commands.json \
+            "release-stage/DreadHunger-Linux-Toolkit/LinuxServer/GM控制台/gm_announce.json" \
+            release-stage/DreadHunger-Linux-Toolkit/LinuxServer/Manifest_DebugFiles_Linux.txt \
+            release-stage/DreadHunger-Linux-Toolkit/LinuxServer/Manifest_NonUFSFiles_Linux.txt \
+            "release-stage/DreadHunger-Linux-Toolkit/LinuxServer/开服器/manager_config.json" \
+            "release-stage/DreadHunger-Linux-Toolkit/LinuxServer/开服器/.dread_hunger_manager_state.json"
+          find release-stage -type d -name __pycache__ -prune -exec rm -rf {} +
+          find release-stage -type f -name '*.log' -delete
+          chmod +x \
+            release-stage/DreadHunger-Linux-Toolkit/LinuxServer/install.sh \
+            release-stage/DreadHunger-Linux-Toolkit/LinuxServer/dhctl.sh \
+            release-stage/DreadHunger-Linux-Toolkit/LinuxServer/DreadHungerServer.sh
+          tar -C release-stage -czf DreadHunger-Linux-Toolkit.tar.gz DreadHunger-Linux-Toolkit
+          sha256sum DreadHunger-Linux-Toolkit.tar.gz > linux-sha256.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-toolkit
+          path: |
+            DreadHunger-Linux-Toolkit.tar.gz
+            linux-sha256.txt
+          if-no-files-found: error
+
+  release:
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: windows-clients
+          path: release-assets/windows
+      - uses: actions/download-artifact@v8
+        with:
+          name: linux-toolkit
+          path: release-assets/linux
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --verify-tag --generate-notes
+          gh release upload "$TAG" release-assets/windows/* release-assets/linux/* --clobber

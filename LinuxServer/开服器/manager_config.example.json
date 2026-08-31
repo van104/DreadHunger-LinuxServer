@@ -1,0 +1,14 @@
+{
+  "map": "Departure_Persistent",
+  "maxplayers": 8,
+  "thralls": 2,
+  "dayminutes": 9,
+  "daysbeforeblizzard": 3,
+  "predatordamage": 1.0,
+  "coalburnrate": 1.0,
+  "hungerrate": 1.0,
+  "coldintensity": 1.0,
+  "server_port": 9100,
+  "extra_args": [],
+  "patch_source": "Linux 插件"
+}
