@@ -6,6 +6,7 @@
 # 仅允许 .gitignore、LinuxServer 与 Windows 远程客户端源码
 !/.gitignore
 !/README.md
+!/LICENSE
 !/.github/
 !/.github/**
 !/LinuxServer/
