@@ -10,6 +10,13 @@
 
 > 兼容性提示：当前插件内存偏移针对 Dread Hunger Finale 1.2.4 Linux 服务端构建。游戏二进制更新后必须重新核对偏移，不能直接注入未知版本。
 
+## 部署要求
+
+- 建议至少 4 GB 内存；内存较小时请配置 Swap，游戏服、两个 Web 服务和 Frida 会同时占用内存。
+- 需要 Python 3.10+、`venv` 和 `pip`。缺少依赖时安装脚本会调用 `apt-get`、`dnf` 或 `yum`，因此需要 root 或可用的 `sudo`。
+- 安装 Frida 需要访问 PyPI。国内网络可在运行安装脚本前设置标准的 `PIP_INDEX_URL` 镜像变量。
+- 安装脚本只检查服务端目录和二进制是否存在，不校验游戏版本。启动前请人工确认服务端为 Finale 1.2.4；其他版本不要注入本仓库插件。
+
 ## 不包含的文件
 
 仓库和 Release **不包含** Dread Hunger 游戏本体、Linux 服务端 `Engine/`、`DreadHunger/`、PAK、调试符号、`DHConnector.exe` 或 `dhpow.dll`。请使用你合法取得且版本匹配的文件。
@@ -50,6 +57,8 @@ chmod +x install.sh dhctl.sh
 5. 通过开服器启动游戏服务端；开服器会自动启动 Frida 注入器。
 6. 在终端显示 Windows 客户端和快速进服器需要填写的地址。
 
+当安装程序以 root 运行且系统存在宝塔常用的 `www` 用户时，游戏和 Frida 会以 `www` 运行。安装程序会自动创建仅用于 GM 通信的 `.gm_runtime/` 可写目录，不会要求把整个项目目录交给 `www`。如果项目位于 `/root` 等 `www` 无法访问的父目录，安装会给出明确错误；请把项目移动到 `/opt`、`/srv` 或 `/www/wwwroot` 下再安装。
+
 以后使用：
 
 ```bash
@@ -65,7 +74,18 @@ chmod +x install.sh dhctl.sh
 DH_RECONFIGURE=1 ./install.sh
 ```
 
-无人值守安装也可以提前设置 `DH_PUBLIC_HOST`、`DH_MANAGER_PORT`、`DH_GM_PORT`、`DH_GAME_PORT`、`DH_MANAGER_PASSWORD` 和 `DH_GM_PASSWORD`。
+无人值守安装必须一次性提供以下全部变量；缺少任何一项时安装程序会列出缺失变量并退出：
+
+```bash
+DH_PUBLIC_HOST=服务器IP或域名 \
+DH_BIND_HOST=0.0.0.0 \
+DH_MANAGER_PORT=8800 \
+DH_GM_PORT=9900 \
+DH_GAME_PORT=9100 \
+DH_MANAGER_PASSWORD='至少8位的管理密码' \
+DH_GM_PASSWORD='另一个至少8位的GM密码' \
+./install.sh
+```
 
 ## 端口与 Windows 客户端
 
@@ -77,9 +97,28 @@ DH_RECONFIGURE=1 ./install.sh
 | GM API | 9900 | TCP | `服务器IP:9900` + GM 密码 |
 | 游戏服务端 | 9100 | UDP | 快速进服器填写 `服务器IP:9100` |
 
-云服务器安全组必须放行游戏 UDP 端口。管理端口 8800 和 9900 建议只允许管理员公网 IP 访问，不要向全网开放。
+云服务器安全组、系统防火墙以及宝塔“安全”页面都要放行对应端口：游戏端口使用 UDP，管理和 GM 端口使用 TCP。管理端口 8800 和 9900 建议只允许管理员公网 IP 访问，不要向全网开放。
+
+```bash
+# Ubuntu/Debian 使用 ufw 的示例
+sudo ufw allow 9100/udp
+sudo ufw allow from 管理员公网IP to any port 8800 proto tcp
+sudo ufw allow from 管理员公网IP to any port 9900 proto tcp
+
+# CentOS/RHEL 使用 firewalld 的游戏端口示例
+sudo firewall-cmd --permanent --add-port=9100/udp
+sudo firewall-cmd --reload
+```
+
+开服器页面保存 `server_port` 后会自动同步 `deploy_config.json` 中的 `game_port`，`dhctl status` 和进服地址会使用实际游戏端口。升级自旧版后如两处端口不一致，请在开服器页面重新保存一次配置。
 
 玩家从 GitHub Release 下载 `DreadHungerQuickJoin.exe`，输入安装完成时显示的游戏地址即可。快速进服器仍要求玩家电脑已经安装兼容的 `DHConnector.exe` 与 `dhpow.dll`，本项目不会分发这两个第三方组件。
+
+## 插件修改与升级
+
+- 注入器只在建立 Frida 会话时读取插件文件。新增、删除、改名或修改插件内容后，需要在开服器点击“重启注入器”，或等待本局结束后下一次注入，改动才会生效。
+- 升级前先执行 `./dhctl.sh stop`，并备份 `deploy_config.json`、`开服器/manager_config.json`、GM 黑名单和自定义插件；替换程序文件后重新运行 `./install.sh`。
+- 当前注入器按进程名查找游戏服，同一台机器不支持可靠运行多个实例。请避免同时启动多个服务端；否则即使端口不同，也可能注入到错误进程。
 
 ## 从源码构建 Windows EXE
 

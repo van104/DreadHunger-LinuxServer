@@ -49,6 +49,13 @@ def load_config() -> Dict[str, Any]:
             raise ControlError("%s 必须是端口数字" % key) from exc
         if not 1 <= value[key] <= 65535:
             raise ControlError("%s 必须在 1-65535 范围内" % key)
+    manager_config = ROOT / "开服器" / "manager_config.json"
+    try:
+        manager_port = int(json.loads(manager_config.read_text(encoding="utf-8"))["server_port"])
+        if 1 <= manager_port <= 65535:
+            value["game_port"] = manager_port
+    except (FileNotFoundError, OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+        pass
     if len({value["manager_port"], value["gm_port"], value["game_port"]}) != 3:
         raise ControlError("管理、GM、游戏端口不能重复")
     if len(str(value["manager_password"])) < 8 or len(str(value["gm_password"])) < 8:

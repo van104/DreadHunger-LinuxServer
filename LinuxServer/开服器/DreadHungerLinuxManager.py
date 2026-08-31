@@ -31,7 +31,6 @@ SERVER_BINARY = "DreadHungerServer-Linux-Shipping"
 CONFIG_FILE = "manager_config.json"
 STATE_FILE = ".dread_hunger_manager_state.json"
 PATCH_EXTENSIONS = {".js", ".pak", ".sig"}
-DEFAULT_LINUX_ROOT = Path("/www/wwwroot/Dread Hunger/LinuxServer")
 GAME_KEYS = (
     "maxplayers",
     "thralls",
@@ -90,8 +89,6 @@ def discover_root(explicit: Optional[Path]) -> Path:
     candidates: List[Path] = []
     if explicit is not None:
         candidates.append(explicit)
-    if DEFAULT_LINUX_ROOT.is_dir():
-        candidates.append(DEFAULT_LINUX_ROOT)
     candidates.append(Path.cwd())
     try:
         candidates.append(Path(__file__).resolve().parent)
@@ -111,7 +108,7 @@ def discover_root(explicit: Optional[Path]) -> Path:
         if server_root_valid(resolved):
             return resolved
 
-    requested = str(explicit) if explicit else str(DEFAULT_LINUX_ROOT)
+    requested = str(explicit) if explicit else "当前目录或脚本上级目录"
     raise ManagerError("未找到 LinuxServer 目录，请使用 --root 指定: " + requested)
 
 
@@ -368,6 +365,17 @@ class ServerManager:
                     merged[key] = incoming[key]
             self.config = normalize_config(merged, self.root)
             atomic_write_json(self.config_path, self.config)
+            deploy_path = self.root / "deploy_config.json"
+            deploy = read_json(deploy_path, None)
+            if isinstance(deploy, dict) and deploy.get("game_port") != self.config["server_port"]:
+                deploy["game_port"] = self.config["server_port"]
+                temp = deploy_path.with_name(deploy_path.name + ".tmp")
+                try:
+                    temp.write_text(json.dumps(deploy, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                    os.chmod(temp, 0o600)
+                    os.replace(str(temp), str(deploy_path))
+                except OSError as exc:
+                    raise ManagerError("同步 deploy_config.json 游戏端口失败: " + str(exc)) from exc
             return dict(self.config)
 
     def start(self) -> Dict[str, Any]:
@@ -883,7 +891,6 @@ class ServerManager:
     def saved_logs_dir(self) -> Path:
         candidates = [
             self.root / "DreadHunger" / "Saved" / "Logs",
-            Path("/www/wwwroot/Dread Hunger/LinuxServer/DreadHunger/Saved/Logs"),
             self.root / "Saved" / "Logs",
             self.root.parent / "WindowsServer" / "DreadHunger" / "Saved" / "Logs",
         ]

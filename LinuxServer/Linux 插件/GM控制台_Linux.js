@@ -15,9 +15,10 @@ if (mod !== null) {
     var base = mod.base;
 
     /* ===== 配置 ===== */
-    /* 注意: 游戏进程 cwd 是 DreadHunger/Binaries/Linux, 必须用绝对路径 */
-    var CommandFile      = '/www/wwwroot/Dread Hunger/LinuxServer/gm_commands.json';
-    var PlayerListFile   = '/www/wwwroot/Dread Hunger/LinuxServer/gm_player_list.json';
+    /* DH_LINUX_ROOT 由 frida_loader.py 根据实际安装目录注入 */
+    var RuntimeDir       = DH_LINUX_ROOT + '/.gm_runtime';
+    var CommandFile      = RuntimeDir + '/gm_commands.json';
+    var PlayerListFile   = RuntimeDir + '/gm_player_list.json';
     var CommandPollMs    = 1000;
     var PlayerPollMs     = 3000;
     /* ================ */

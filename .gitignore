@@ -25,6 +25,7 @@
 /LinuxServer/.manager_backups/
 .manager_backups/
 /LinuxServer/.runtime/
+/LinuxServer/.gm_runtime/
 /LinuxServer/.venv/
 /LinuxServer/deploy_config.json
 /LinuxServer/gm_commands.json

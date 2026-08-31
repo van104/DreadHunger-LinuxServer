@@ -10,8 +10,8 @@
 
 var base = Process.findModuleByName('DreadHungerServer-Linux-Shipping').base;
 
-/* ===== 配置文件路径 (绝对路径) ===== */
-var AnnounceFile = '/www/wwwroot/Dread Hunger/LinuxServer/gm_announce.json';
+/* DH_LINUX_ROOT 由 frida_loader.py 根据实际安装目录注入 */
+var AnnounceFile = DH_LINUX_ROOT + '/GM控制台/gm_announce.json';
 var PollIntervalSec = 2;        // 检测新玩家间隔(秒)
 /* ============================ */
 

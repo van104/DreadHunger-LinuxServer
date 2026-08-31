@@ -219,8 +219,9 @@ ReceiveThrallMsg(controller, makeFText('[GM] 通知内容'), ptr(0));
 游戏进程的 cwd 是 `DreadHunger/Binaries/Linux`，命令文件和玩家列表**必须用绝对路径**：
 
 ```js
-var CommandFile    = '/www/wwwroot/Dread Hunger/LinuxServer/gm_commands.json';
-var PlayerListFile = '/www/wwwroot/Dread Hunger/LinuxServer/gm_player_list.json';
+var RuntimeDir     = DH_LINUX_ROOT + '/.gm_runtime';
+var CommandFile    = RuntimeDir + '/gm_commands.json';
+var PlayerListFile = RuntimeDir + '/gm_player_list.json';
 ```
 
 ### 4. 添加新功能

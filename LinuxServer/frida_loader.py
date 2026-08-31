@@ -192,6 +192,11 @@ def wait_for_server_ready(root_dir: Path, pid: int, max_wait_sec: float = 25.0) 
     log("等待超时 (%d 秒)，将直接尝试连接注入..." % int(max_wait_sec))
 
 
+def prepare_plugin_source(script_path: Path, root_dir: Path) -> str:
+    source = script_path.read_text(encoding="utf-8")
+    return "var DH_LINUX_ROOT = %s;\n%s" % (json.dumps(str(root_dir), ensure_ascii=False), source)
+
+
 def load_plugins(root_dir: Path, plugins_dir: Path) -> None:
     waiting_for_server_logged = False
     while True:
@@ -218,7 +223,7 @@ def load_plugins(root_dir: Path, plugins_dir: Path) -> None:
             time.sleep(3)
             continue
 
-        # 每次注入前动态扫描插件目录: 增删/改名后无需重启注入器
+        # 每次建立 Frida 会话前重新扫描插件目录。
         script_paths = sorted(plugins_dir.glob("*.js"))
         if not script_paths:
             log("插件目录没有 .js 文件: %s" % plugins_dir)
@@ -233,7 +238,7 @@ def load_plugins(root_dir: Path, plugins_dir: Path) -> None:
         failed = 0
         for script_path in script_paths:
             try:
-                source = script_path.read_text(encoding="utf-8")
+                source = prepare_plugin_source(script_path, root_dir)
                 script = session.create_script(source)
                 script.on("message", lambda message, data, name=script_path.name: on_message(name, message, data))
                 script.load()
@@ -283,14 +288,9 @@ def on_message(script_name: str, message: dict, data: bytes | None) -> None:
         log("[%s] %s" % (script_name, message))
 
 
-DEFAULT_LINUX_ROOT = Path("/www/wwwroot/Dread Hunger/LinuxServer")
-
-
 def discover_root(explicit: Path | None) -> Path:
     if explicit is not None:
         return explicit.expanduser().resolve()
-    if DEFAULT_LINUX_ROOT.is_dir():
-        return DEFAULT_LINUX_ROOT
     for candidate in [Path.cwd(), Path(__file__).resolve().parent, Path(__file__).resolve().parent.parent]:
         if (candidate / "Linux 插件").is_dir() or (candidate / "DreadHunger").is_dir():
             return candidate.resolve()
@@ -299,7 +299,7 @@ def discover_root(explicit: Path | None) -> Path:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Dread Hunger Linux frida 注入器")
-    parser.add_argument("--root", type=Path, default=None, help="LinuxServer 目录 (默认 /www/wwwroot/Dread Hunger/LinuxServer)")
+    parser.add_argument("--root", type=Path, default=None, help="LinuxServer 目录 (默认自动从当前目录和脚本目录查找)")
     parser.add_argument("--plugins-dir", type=Path, default=None, help="插件目录 (默认 <root>/Linux 插件)")
     parser.add_argument("--check", action="store_true", help="检查环境, 不启动注入")
     args = parser.parse_args()

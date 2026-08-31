@@ -9,6 +9,7 @@ MANAGER_CONFIG="$SCRIPT_DIR/开服器/manager_config.json"
 MANAGER_EXAMPLE="$SCRIPT_DIR/开服器/manager_config.example.json"
 ANNOUNCE_CONFIG="$SCRIPT_DIR/GM控制台/gm_announce.json"
 ANNOUNCE_EXAMPLE="$SCRIPT_DIR/GM控制台/gm_announce.example.json"
+GM_RUNTIME_DIR="$SCRIPT_DIR/.gm_runtime"
 
 say() {
     printf '%s\n' "$*"
@@ -55,7 +56,7 @@ prompt_value() {
     if [ -n "$current_value" ]; then
         return
     fi
-    read -r -p "$prompt_text [$default_value]: " entered
+    read -r -p "$prompt_text [$default_value]: " entered || die "无法读取输入；无人值守安装请设置 README 中列出的全部 DH_* 环境变量"
     printf -v "$variable_name" '%s' "${entered:-$default_value}"
 }
 
@@ -65,7 +66,7 @@ prompt_password() {
     local current_value=${!variable_name:-}
     local entered
     while [ "${#current_value}" -lt 8 ]; do
-        read -r -s -p "$prompt_text（至少8位）: " entered
+        read -r -s -p "$prompt_text（至少8位）: " entered || die "无法读取密码；无人值守安装请设置 README 中列出的全部 DH_* 环境变量"
         printf '\n'
         current_value=$entered
         if [ "${#current_value}" -lt 8 ]; then
@@ -111,6 +112,14 @@ else
     GAME_PORT=${DH_GAME_PORT:-}
     MANAGER_PASSWORD=${DH_MANAGER_PASSWORD:-}
     GM_PASSWORD=${DH_GM_PASSWORD:-}
+
+    if [ ! -t 0 ]; then
+        missing=""
+        for variable_name in DH_PUBLIC_HOST DH_BIND_HOST DH_MANAGER_PORT DH_GM_PORT DH_GAME_PORT DH_MANAGER_PASSWORD DH_GM_PASSWORD; do
+            [ -n "${!variable_name:-}" ] || missing="$missing $variable_name"
+        done
+        [ -z "$missing" ] || die "非交互安装缺少环境变量：${missing# }"
+    fi
 
     prompt_value PUBLIC_HOST "服务器公网 IP 或域名" "server.example.com"
     prompt_value BIND_HOST "管理服务监听地址" "0.0.0.0"
@@ -175,6 +184,16 @@ PY
 
 if [ ! -f "$ANNOUNCE_CONFIG" ]; then
     cp "$ANNOUNCE_EXAMPLE" "$ANNOUNCE_CONFIG"
+fi
+chmod 644 "$ANNOUNCE_CONFIG"
+
+mkdir -p "$GM_RUNTIME_DIR"
+chmod 700 "$GM_RUNTIME_DIR"
+if [ "$(id -u)" -eq 0 ] && id www >/dev/null 2>&1; then
+    chown www:www "$GM_RUNTIME_DIR"
+    chmod 770 "$GM_RUNTIME_DIR"
+    runuser -u www -- test -w "$GM_RUNTIME_DIR" || die "www 用户无法写入 $GM_RUNTIME_DIR；请把项目放到 www 可访问的目录后重试"
+    runuser -u www -- test -r "$ANNOUNCE_CONFIG" || die "www 用户无法读取 $ANNOUNCE_CONFIG；请检查项目父目录权限"
 fi
 
 chmod 700 "$SCRIPT_DIR/install.sh" "$SCRIPT_DIR/dhctl.sh"

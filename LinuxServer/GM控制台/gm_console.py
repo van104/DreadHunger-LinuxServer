@@ -19,6 +19,7 @@ VERSION = "1.6.1"
 DEFAULT_PASSWORD = "admin"
 COMMAND_FILE = "gm_commands.json"
 PLAYER_LIST_FILE = "gm_player_list.json"
+GM_RUNTIME_DIR = ".gm_runtime"
 BLACKLIST_FILE = "gm_blacklist.json"
 BLACKLIST_CHECK_TOKEN_FILE = "gm_blacklist_check_token.txt"
 BLACKLIST_REASON_PRESETS = {
@@ -141,8 +142,10 @@ class GMConsole:
         self.session_tokens = set()
         self.lock = threading.Lock()
         self.blacklist_lock = threading.RLock()
-        self.command_path = root / COMMAND_FILE
-        self.player_list_path = root / PLAYER_LIST_FILE
+        self.runtime_dir = root / GM_RUNTIME_DIR
+        self.runtime_dir.mkdir(parents=True, exist_ok=True)
+        self.command_path = self.runtime_dir / COMMAND_FILE
+        self.player_list_path = self.runtime_dir / PLAYER_LIST_FILE
         self.blacklist_path = root / BLACKLIST_FILE
         self.blacklist_check_token_path = root / BLACKLIST_CHECK_TOKEN_FILE
         self.game_log_path = root / "DreadHunger" / "Saved" / "Logs" / "DreadHunger.log"
@@ -2100,9 +2103,6 @@ def make_handler(console: GMConsole):
 
 # ── Main ──
 
-DEFAULT_LINUX_ROOT = Path("/www/wwwroot/Dread Hunger/LinuxServer")
-
-
 class GMHTTPServer(ThreadingHTTPServer):
     request_queue_size = 64
     daemon_threads = True
@@ -2112,8 +2112,6 @@ class GMHTTPServer(ThreadingHTTPServer):
 def discover_root(explicit: Optional[Path]) -> Path:
     if explicit is not None:
         return explicit.expanduser().resolve()
-    if DEFAULT_LINUX_ROOT.is_dir():
-        return DEFAULT_LINUX_ROOT
     for candidate in [Path.cwd(), Path(__file__).resolve().parent, Path(__file__).resolve().parent.parent]:
         if (candidate / "DreadHunger").is_dir() or (candidate / "Linux 插件").is_dir():
             return candidate.resolve()
@@ -2122,7 +2120,7 @@ def discover_root(explicit: Optional[Path]) -> Path:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Dread Hunger Linux GM 控制台")
-    parser.add_argument("--root", type=Path, default=None, help="LinuxServer 目录 (默认 /www/wwwroot/Dread Hunger/LinuxServer)")
+    parser.add_argument("--root", type=Path, default=None, help="LinuxServer 目录 (默认自动从当前目录和脚本目录查找)")
     parser.add_argument("--host", default="0.0.0.0", help="监听地址 (默认 0.0.0.0)")
     parser.add_argument("--port", type=int, default=9900, help="监听端口 (默认 9900)")
     parser.add_argument(
@@ -2140,7 +2138,7 @@ def main(argv=None) -> int:
     print(f"[GM控制台] 根目录: {root}")
     print(f"[GM控制台] 面板: http://{args.host}:{args.port}")
     print("[GM控制台] 认证: 已启用（密码不会写入日志）")
-    print(f"[GM控制台] 指令文件: {root / COMMAND_FILE}")
+    print(f"[GM控制台] 指令文件: {console.command_path}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

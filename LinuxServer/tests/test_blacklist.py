@@ -35,7 +35,9 @@ class BlacklistTests(unittest.TestCase):
             "platform: EOSPlus\n",
             encoding="utf-8",
         )
-        (root / gm_module.PLAYER_LIST_FILE).write_text(
+        runtime_dir = root / gm_module.GM_RUNTIME_DIR
+        runtime_dir.mkdir(parents=True, exist_ok=True)
+        (runtime_dir / gm_module.PLAYER_LIST_FILE).write_text(
             json.dumps(
                 {"timestamp": 1, "count": 1, "players": [{"name": "景岗山王二", "role": "厨师", "index": 0}]},
                 ensure_ascii=False,
@@ -90,7 +92,7 @@ class BlacklistTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             console = self.make_console(root)
-            (root / gm_module.PLAYER_LIST_FILE).write_text(
+            (root / gm_module.GM_RUNTIME_DIR / gm_module.PLAYER_LIST_FILE).write_text(
                 json.dumps({"timestamp": 2, "count": 0, "players": []}),
                 encoding="utf-8",
             )
@@ -172,7 +174,7 @@ class BlacklistTests(unittest.TestCase):
             added = console.add_blacklist(
                 {"player": "景岗山王二", "reason_code": "quit_after_death", "reason": ""}
             )["entry"]
-            (root / gm_module.PLAYER_LIST_FILE).write_text(
+            (root / gm_module.GM_RUNTIME_DIR / gm_module.PLAYER_LIST_FILE).write_text(
                 json.dumps({"timestamp": 2, "count": 0, "players": []}),
                 encoding="utf-8",
             )

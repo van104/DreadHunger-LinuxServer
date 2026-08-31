@@ -11,8 +11,8 @@
 
 | 文件 | 说明 |
 |------|------|
-| `gm_commands.json` | Web 面板写入的 GM 指令队列，Frida 读取后自动删除 |
-| `gm_player_list.json` | Frida 插件维护的在线玩家列表，Web 面板读取展示 |
+| `.gm_runtime/gm_commands.json` | Web 面板写入的 GM 指令队列，Frida 读取后自动删除 |
+| `.gm_runtime/gm_player_list.json` | Frida 插件维护的在线玩家列表，Web 面板读取展示 |
 | `gm_blacklist.json` | 黑名单记录；保存姓名、完整用户 ID、Steam/EOS ID、理由和时间 |
 | `gm_blacklist_check_token.txt` | 自动生成的只读查询令牌；供快速进服器检查大厅使用 |
 
@@ -195,7 +195,7 @@ ufw allow 9900/tcp
 2. **密码安全**：默认密码是 `admin`，生产环境务必修改
 3. **偏移量版本**：GM 插件中的内存偏移量与现有 Linux 插件一致。如果游戏更新导致偏移变化，需要同步更新 `GM控制台_Linux.js` 中的地址
 4. **端口冲突**：9900 端口不能被其他服务占用。管理器默认用 8800，游戏默认用 9100，不会冲突
-5. **多次执行**：指令是一次性的，Frida 读取 `gm_commands.json` 后会立即删除文件，不会重复执行
+5. **多次执行**：指令是一次性的，Frida 读取 `.gm_runtime/gm_commands.json` 后会立即删除文件，不会重复执行
 
 ---
 
