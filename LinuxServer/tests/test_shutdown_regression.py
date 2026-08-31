@@ -68,9 +68,10 @@ class StopOrderTests(unittest.TestCase):
         manager._clear_state = lambda: events.append("state_cleared")
         manager.status = lambda: {"running": False}
 
+        signal_method = "killpg" if manager_module.os.name == "posix" else "kill"
         with mock.patch.object(
             manager_module.os,
-            "kill",
+            signal_method,
             side_effect=lambda pid, sig: events.append("game_signaled"),
         ):
             result = manager.stop()

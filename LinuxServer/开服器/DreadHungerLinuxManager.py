@@ -439,6 +439,9 @@ class ServerManager:
                     self.process.terminate()
                 else:
                     os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                # 进程可能在状态检查后自行退出；停止操作应保持幂等。
+                pass
             except OSError as exc:
                 raise ManagerError("停止失败: " + str(exc))
 
