@@ -52,7 +52,7 @@ jobs:
       - name: Package Linux toolkit
         run: |
           mkdir -p release-stage/DreadHunger-Linux-Toolkit
-          cp README.md release-stage/DreadHunger-Linux-Toolkit/
+          cp README.md README_EN.md release-stage/DreadHunger-Linux-Toolkit/
           cp -R LinuxServer release-stage/DreadHunger-Linux-Toolkit/
           rm -rf \
             release-stage/DreadHunger-Linux-Toolkit/LinuxServer/DreadHunger \

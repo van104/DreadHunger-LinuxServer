@@ -1,5 +1,7 @@
 # Dread Hunger Linux Server Toolkit
 
+**简体中文** | [English](README_EN.md)
+
 这是一个面向 Linux Dread Hunger 私服的管理工具包，包含：
 
 - Linux Web 开服器：启动、停止、配置服务器和管理插件。
