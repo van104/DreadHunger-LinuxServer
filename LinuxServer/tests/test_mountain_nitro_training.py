@@ -5,11 +5,13 @@ from pathlib import Path
 
 
 LINUX_SERVER_ROOT = Path(__file__).resolve().parents[1]
-PLUGIN_PATH = LINUX_SERVER_ROOT / "Linux 插件" / "山顶飞天甘油训练_Linux.js"
+SINGLE_PLUGIN_PATH = LINUX_SERVER_ROOT / "Linux 插件" / "单人山顶飞天甘油训练.js.disabled"
+MULTIPLAYER_PLUGIN_PATH = LINUX_SERVER_ROOT / "Linux 插件" / "多人山顶飞天甘油训练.js"
 
 
 NODE_HARNESS = r"""
 const source = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+const multiplayer = source.includes('多人山顶飞天甘油训练');
 const memory = new Map();
 const hooks = new Map();
 const intervals = new Map();
@@ -86,6 +88,10 @@ const playerState = new Pointer(0x740000);
 const controller = new Pointer(0x750000);
 const pawn = new Pointer(0x760000);
 const root = new Pointer(0x770000);
+const playerState2 = new Pointer(0x7A1000);
+const controller2 = new Pointer(0x7A2000);
+const pawn2 = new Pointer(0x7A3000);
+const root2 = new Pointer(0x7A4000);
 const nitroPickupClass = new Pointer(0x790000);
 const nitroInventoryClass = new Pointer(0x782000);
 const nitroPickupData = new Pointer(0x781000);
@@ -116,13 +122,19 @@ memory.set(gameMode.value + 0x280, gameState.value);
 memory.set(gameState.value + 0x2A8, warship.value);
 memory.set(gameState.value + 0x2B0, escapeVolume.value);
 memory.set(gameState.value + 0x238, playerData.value);
-memory.set(gameState.value + 0x240, 1);
+memory.set(gameState.value + 0x240, multiplayer ? 2 : 1);
 memory.set(playerData.value, playerState.value);
+if (multiplayer) memory.set(playerData.value + 8, playerState2.value);
 memory.set(controller.value + 0x250, pawn.value);
 memory.set(pawn.value + 0x130, root.value);
 memory.set(root.value + 0x1D0, 0);
 memory.set(root.value + 0x1D4, 0);
 memory.set(root.value + 0x1D8, 0);
+memory.set(controller2.value + 0x250, pawn2.value);
+memory.set(pawn2.value + 0x130, root2.value);
+memory.set(root2.value + 0x1D0, 0);
+memory.set(root2.value + 0x1D4, 0);
+memory.set(root2.value + 0x1D8, 0);
 memory.set(warship.value + 0x130, warshipRoot.value);
 memory.set(warshipRoot.value + 0x1D0, 0);
 memory.set(warshipRoot.value + 0x1D4, 0);
@@ -159,7 +171,7 @@ global.NativeFunction = function (address, returnType, argumentTypes) {
     case 0x26C6160:
       return () => 1;
     case 0x277E4F0:
-      return ps => ps.equals(playerState) ? controller : new Pointer(0);
+      return ps => ps.equals(playerState) ? controller : (ps.equals(playerState2) ? controller2 : new Pointer(0));
     case 0x277FAD0:
       return (ps, tier) => tierCalls.push([ps.value, tier]);
     case 0x26D4120:
@@ -268,6 +280,9 @@ startup.callback();
 const playerTeleports = teleportCalls.filter(call => call.actor === pawn.value);
 const shipTeleports = teleportCalls.filter(call => call.actor === warship.value);
 if (playerTeleports.length !== 1) throw new Error('player was not teleported at match start');
+if (multiplayer && teleportCalls.filter(call => call.actor === pawn2.value).length !== 1) {
+  throw new Error('second player was not teleported at match start');
+}
 const target = playerTeleports[0].location;
 if (target[0] !== 4434.21 || target[1] !== 6397.93 || target[2] !== 7297.65) {
   throw new Error('wrong training coordinates');
@@ -365,16 +380,29 @@ if (destroyed.includes(farPawn.value) || destroyed.includes(farController.value)
 }
 
 memory.set(root.value + 0x1D0, 4434.21 + 3000);
+if (multiplayer) memory.set(root2.value + 0x1D0, 4434.21 + 3000);
 intervals.get(500)();
-const reset = timeouts.find(timer => timer.delay === 10000);
-if (!reset) throw new Error('flight reset was not scheduled');
+const resets = timeouts.filter(timer => timer.delay === 10000);
+if (resets.length !== (multiplayer ? 2 : 1)) throw new Error('per-player flight reset was not scheduled');
 
 memory.set(warship.value + 0x2A0, 900);
 memory.set(packIceActor.value + 0x350, 3);
 destroyed.length = 0;
-reset.callback();
+resets[0].callback();
+if (multiplayer) {
+  if (teleportCalls.filter(call => call.actor === warship.value).length !== 1) {
+    throw new Error('first returning player interrupted the second player flight');
+  }
+  if (memory.get(warship.value + 0x2A0) !== 900 || destroyed.includes(packIceActor.value)) {
+    throw new Error('shared world was reset before all players returned');
+  }
+  resets[1].callback();
+}
 if (teleportCalls.filter(call => call.actor === pawn.value).length !== 2) {
   throw new Error('player was not returned after ten seconds');
+}
+if (multiplayer && teleportCalls.filter(call => call.actor === pawn2.value).length !== 2) {
+  throw new Error('second player was not independently returned after ten seconds');
 }
 if (teleportCalls.filter(call => call.actor === warship.value).length !== 2) {
   throw new Error('ship was not returned after flight reset');
@@ -395,17 +423,24 @@ if (spawnedPackIce.length !== 1 || spawnedPackIce[0][1] !== packIceActorClass.va
 
 
 class MountainNitroTrainingTests(unittest.TestCase):
-    def test_training_cycle_and_predator_cleanup(self):
-        source = PLUGIN_PATH.read_text(encoding="utf-8")
-        result = subprocess.run(
-            ["node", "-e", NODE_HARNESS],
-            input=json.dumps(source),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            check=False,
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
+    def test_only_multiplayer_variant_is_enabled_by_default(self):
+        active = sorted(path.name for path in (LINUX_SERVER_ROOT / "Linux 插件").glob("*山顶飞天甘油训练*.js"))
+        self.assertEqual(active, [MULTIPLAYER_PLUGIN_PATH.name])
+        self.assertTrue(SINGLE_PLUGIN_PATH.is_file())
+
+    def test_single_and_multiplayer_training_cycles(self):
+        for plugin_path in (SINGLE_PLUGIN_PATH, MULTIPLAYER_PLUGIN_PATH):
+            with self.subTest(plugin=plugin_path.name):
+                source = plugin_path.read_text(encoding="utf-8")
+                result = subprocess.run(
+                    ["node", "-e", NODE_HARNESS],
+                    input=json.dumps(source),
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == "__main__":

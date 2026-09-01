@@ -1,5 +1,5 @@
 /*
-  山顶飞天甘油训练 (Linux 服务端插件)
+  多人山顶飞天甘油训练 (Linux 服务端插件)
 
   功能:
   1. 开局把在线玩家传送到山顶训练点。
@@ -12,8 +12,10 @@
   8. 灵界行走等技能在效果结束后立即清除冷却，可以连续练习。
   9. 开局把船移动到训练水域；每次复位时恢复船体与受损浮冰。
   10. 刷新点的甘油被拿走或滚远后自动生成下一枚。
+  11. 每名玩家独立计时复位；所有飞出玩家返回后，才统一重置一次船和浮冰。
 
   注意:
+  - 多人版与单人版互斥；启用本插件前必须先停用单人版。
   - 使用本插件时应停用“狼人无限技能”，否则两个插件会争用技能充能等级。
 */
 var mod = Process.findModuleByName('DreadHungerServer-Linux-Shipping');
@@ -114,6 +116,7 @@ if (mod !== null) {
     var MatchActive = false;
     var MatchSequence = 0;
     var Trainees = Object.create(null);
+    var WorldResetPending = false;
     var ShipReady = false;
     var NitroPickupClass = ptr(0);
     var NitroInventoryClass = ptr(0);
@@ -376,6 +379,19 @@ if (mod !== null) {
         restoreDamagedPackIce(MatchSequence);
     }
 
+    function tryResetTrainingWorld() {
+        if (!WorldResetPending) return;
+        var keys = Object.keys(Trainees);
+        for (var i = 0; i < keys.length; i++) {
+            var record = Trainees[keys[i]];
+            if (!record.teleported || record.resetScheduled) return;
+            var location = getLocation(record.pawn);
+            if (location === null || distanceSquared(location, TrainingPosition) > FlightDistance * FlightDistance) return;
+        }
+        WorldResetPending = false;
+        resetTrainingWorld();
+    }
+
     function applyProtection(pawn) {
         try {
             if (!isReadable(pawn)) return;
@@ -546,9 +562,10 @@ if (mod !== null) {
             record.pawn = pawn;
             record.teleported = true;
             record.resetScheduled = false;
-            resetTrainingWorld();
+            WorldResetPending = true;
             ensureNitroPickup();
             notify(controller, '[训练] 已复位到山顶，可以继续练习');
+            tryResetTrainingWorld();
         } catch (e) {
             record.resetScheduled = false;
             console.log('[山顶飞天甘油] 复位失败: ' + e);
@@ -571,6 +588,7 @@ if (mod !== null) {
                 MatchActive = false;
                 MatchSequence++;
                 Trainees = Object.create(null);
+                WorldResetPending = false;
                 ShipReady = false;
                 PackIceSnapshots = [];
                 PackIceSnapshotsReady = false;
@@ -582,6 +600,7 @@ if (mod !== null) {
             MatchActive = true;
             MatchSequence++;
             Trainees = Object.create(null);
+            WorldResetPending = false;
             ShipReady = false;
             PackIceSnapshots = [];
             PackIceSnapshotsReady = false;
@@ -634,6 +653,7 @@ if (mod !== null) {
         for (var j = 0; j < keys.length; j++) {
             if (!online[keys[j]]) delete Trainees[keys[j]];
         }
+        tryResetTrainingWorld();
     }
 
     function clearNearbyPredators() {
@@ -749,5 +769,5 @@ if (mod !== null) {
     setInterval(keepDaylight, DaytimeRefreshMs);
     setTimeout(updateTrainees, 500);
     setTimeout(keepDaylight, 500);
-    send('山顶飞天甘油训练: 已加载（二阶段：船只、船损、浮冰与甘油刷新点）');
+    send('多人山顶飞天甘油训练: 已加载（玩家独立复位，共享地图统一重置）');
 }
