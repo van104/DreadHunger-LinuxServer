@@ -11,6 +11,7 @@ PLUGIN_PATH = LINUX_SERVER_ROOT / "Linux 插件" / "山顶飞天甘油训练_Lin
 NODE_HARNESS = r"""
 const source = JSON.parse(process.argv[1]);
 const memory = new Map();
+const hooks = new Map();
 const intervals = new Map();
 const timeouts = [];
 const tierCalls = [];
@@ -25,6 +26,7 @@ let nextAllocation = 0x900000;
 class Pointer {
   constructor(value) { this.value = Number(value); }
   add(offset) { return new Pointer(this.value + offset); }
+  sub(offset) { return new Pointer(this.value - offset); }
   isNull() { return this.value === 0; }
   equals(other) { return this.value === other.value; }
   toString() { return '0x' + this.value.toString(16); }
@@ -36,6 +38,8 @@ class Pointer {
   writeS32(value) { memory.set(this.value, value); }
   readFloat() { return memory.get(this.value) || 0; }
   writeFloat(value) { memory.set(this.value, value); }
+  readU64() { return memory.get(this.value) || 0; }
+  writeU64(value) { memory.set(this.value, value); }
   writeU8(value) { memory.set(this.value, value); }
   writeUtf16String() {}
 }
@@ -55,6 +59,9 @@ global.Process = {
   pointerSize: 8,
   findModuleByName: () => ({ base: new Pointer(0x200000) }),
   findRangeByAddress: address => address && !address.isNull() ? { protection: 'rw-' } : null
+};
+global.Interceptor = {
+  attach: (address, callbacks) => hooks.set(address.value, callbacks)
 };
 global.setInterval = (callback, delay) => intervals.set(delay, callback);
 global.setTimeout = (callback, delay) => {
@@ -186,6 +193,39 @@ if (!damageCalls.some(call => call[0] === pawn.value && call[1] === 0)) {
 }
 if (memory.get(pawn.value + 0xA30) !== 0 || memory.get(pawn.value + 0xA31) !== 0) {
   throw new Error('hunger or warmth update remained enabled');
+}
+
+const spellManager = new Pointer(0x840000);
+const spell = new Pointer(0x850000);
+const spellClass = new Pointer(0x860000);
+const otherSpellClass = new Pointer(0x870000);
+const cooldownData = new Pointer(0x880000);
+memory.set(spell.value + 0x10, spellClass.value);
+memory.set(spellManager.value + 0x2A8, cooldownData.value);
+memory.set(spellManager.value + 0x2B0, 2);
+memory.set(cooldownData.value, spellClass.value);
+memory.set(cooldownData.value + 8, 1000);
+memory.set(cooldownData.value + 0x10, otherSpellClass.value);
+memory.set(cooldownData.value + 0x18, 2000);
+
+const castHook = hooks.get(0x29A6D00);
+if (!castHook) throw new Error('missing CastSpell hook');
+memory.set(spellManager.value + 0x280, 1);
+const castContext = {};
+castHook.onEnter.call(castContext, [spellManager]);
+if (memory.get(spellManager.value + 0x280) !== 0) throw new Error('cooldown was not disabled before cast');
+castHook.onLeave.call(castContext);
+if (memory.get(spellManager.value + 0x280) !== 0) throw new Error('cooldown multiplier was not cleared');
+if (memory.get(spellManager.value + 0x2B0) !== 2) throw new Error('active spell timer was cleared too early');
+
+const removeHook = hooks.get(0x29A73C0);
+if (!removeHook) throw new Error('missing RemoveActiveSpell hook');
+const removeContext = {};
+removeHook.onEnter.call(removeContext, [spellManager, spell]);
+removeHook.onLeave.call(removeContext);
+if (memory.get(spellManager.value + 0x2B0) !== 1) throw new Error('finished spell cooldown was not removed');
+if (memory.get(cooldownData.value) !== otherSpellClass.value || memory.get(cooldownData.value + 8) !== 2000) {
+  throw new Error('remaining cooldown entry was not compacted');
 }
 
 intervals.get(5000)();

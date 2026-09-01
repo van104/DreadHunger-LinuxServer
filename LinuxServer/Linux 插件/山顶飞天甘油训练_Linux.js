@@ -9,6 +9,7 @@
   5. 玩家离开训练点 25 米后，10 秒自动回到训练点并补充甘油。
   6. 自动清除训练点 60 米内的捕食者控制器及其 Pawn（包括附近的熊）。
   7. 对局时间固定在中午 12 点，不再进入黑夜。
+  8. 灵界行走等技能在效果结束后立即清除冷却，可以连续练习。
 
   注意:
   - 本阶段不移动船只，也不处理船只伤害。
@@ -77,6 +78,9 @@ if (mod !== null) {
     var FName_FName = new NativeFunction(base.add(0x2B130F0), 'void', ['pointer', 'pointer', 'int8']);
     var FText_FromName = new NativeFunction(base.add(0x2A13190), 'pointer', ['pointer', 'pointer']);
     var ReceiveThrallMessage = new NativeFunction(base.add(0x282B610), 'void', ['pointer', 'pointer', 'pointer']);
+    var UpdateSpellCharge = base.add(0x27A6580);
+    var CastSpell = base.add(0x27A6D00);
+    var RemoveActiveSpell = base.add(0x27A73C0);
 
     var HungerUpdateOffset = 0xA30;
     var WarmthUpdateOffset = 0xA31;
@@ -85,6 +89,11 @@ if (mod !== null) {
     var PawnOffset = 0x250;
     /* ETotemSpellTiers: 0=TST_UNDEFINED, 1=TST_ZERO, 2=TST_ONE。 */
     var SpellTierOne = 2;
+    var CooldownMultiplierOffset = 0x280;
+    var SpellCooldownDataOffset = 0x2A8;
+    var SpellCooldownCountOffset = 0x2B0;
+    var SpellCooldownEntrySize = 0x10;
+    var SpellClassOffset = 0x10;
 
     var MatchActive = false;
     var MatchSequence = 0;
@@ -447,6 +456,42 @@ if (mod !== null) {
         }
     }
 
+    function applyNoCooldown(spellManager) {
+        try {
+            if (isReadable(spellManager)) spellManager.add(CooldownMultiplierOffset).writeFloat(0.0);
+        } catch (e) {
+            console.log('[山顶飞天甘油] 设置无冷却失败: ' + e);
+        }
+    }
+
+    /* 只在法术效果结束后删除冷却项，不能在施法时清除，否则客户端效果计时会卡住。 */
+    function clearFinishedSpellCooldown(spellManager, spell) {
+        try {
+            if (!isReadable(spellManager) || !isReadable(spell)) return;
+            var spellClass = spell.add(SpellClassOffset).readPointer();
+            var cooldownData = spellManager.add(SpellCooldownDataOffset).readPointer();
+            var cooldownCountAddress = spellManager.add(SpellCooldownCountOffset);
+            var cooldownCount = cooldownCountAddress.readS32();
+            if (spellClass.isNull() || cooldownData.isNull() || cooldownCount <= 0 || cooldownCount > 64) return;
+
+            for (var i = 0; i < cooldownCount; i++) {
+                var entry = cooldownData.add(i * SpellCooldownEntrySize);
+                if (!entry.readPointer().equals(spellClass)) continue;
+
+                for (var j = i + 1; j < cooldownCount; j++) {
+                    var source = cooldownData.add(j * SpellCooldownEntrySize);
+                    var target = source.sub(SpellCooldownEntrySize);
+                    target.writePointer(source.readPointer());
+                    target.add(8).writeU64(source.add(8).readU64());
+                }
+                cooldownCountAddress.writeS32(cooldownCount - 1);
+                return;
+            }
+        } catch (e) {
+            console.log('[山顶飞天甘油] 清除技能冷却失败: ' + e);
+        }
+    }
+
     function keepDaylight() {
         if (!MatchActive) return;
         try {
@@ -456,6 +501,38 @@ if (mod !== null) {
             console.log('[山顶飞天甘油] 固定白天失败: ' + e);
         }
     }
+
+    Interceptor.attach(UpdateSpellCharge, {
+        onEnter: function (args) {
+            this.spellManager = args[0];
+            applyNoCooldown(this.spellManager);
+        },
+        onLeave: function () {
+            applyNoCooldown(this.spellManager);
+        }
+    });
+
+    Interceptor.attach(CastSpell, {
+        onEnter: function (args) {
+            this.spellManager = args[0];
+            /* 必须在原函数计算本次冷却前先置零倍率。 */
+            applyNoCooldown(this.spellManager);
+        },
+        onLeave: function () {
+            applyNoCooldown(this.spellManager);
+        }
+    });
+
+    Interceptor.attach(RemoveActiveSpell, {
+        onEnter: function (args) {
+            this.spellManager = args[0];
+            this.spell = args[1];
+        },
+        onLeave: function () {
+            clearFinishedSpellCooldown(this.spellManager, this.spell);
+            applyNoCooldown(this.spellManager);
+        }
+    });
 
     setInterval(updateTrainees, MonitorIntervalMs);
     setInterval(clearNearbyPredators, PredatorPollMs);
