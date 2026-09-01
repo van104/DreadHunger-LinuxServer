@@ -144,7 +144,7 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-Code written specifically for this project is licensed under the MIT License. See [LICENSE](LICENSE). The game and other third-party components are not covered by this license.
+Code written specifically for this project is licensed under the Polyform Noncommercial License 1.0.0. See [LICENSE](LICENSE). The game and other third-party components are not covered by this license.
 
 ## Security Notes
 
