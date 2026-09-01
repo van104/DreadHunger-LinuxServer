@@ -8,6 +8,7 @@
   4. 将狼人技能充能锁定为 1 级。
   5. 玩家离开训练点 25 米后，10 秒自动回到训练点并补充甘油。
   6. 自动清除训练点 60 米内的捕食者控制器及其 Pawn（包括附近的熊）。
+  7. 对局时间固定在中午 12 点，不再进入黑夜。
 
   注意:
   - 本阶段不移动船只，也不处理船只伤害。
@@ -25,6 +26,8 @@ if (mod !== null) {
     var PredatorClearRadius = 6000.0;
     var MonitorIntervalMs = 500;
     var PredatorPollMs = 2000;
+    var DaytimeRefreshMs = 5000;
+    var FixedTimeOfDay = 12.0;
     var NitroClassPath = '/Game/Blueprints/Environment/Nitro/BP_Nitro_Inventory.BP_Nitro_Inventory_C';
     /* ==================== */
 
@@ -32,6 +35,11 @@ if (mod !== null) {
     var ADH_GameMode_HasMatchStarted = new NativeFunction(base.add(0x26C6160), 'uint8', ['pointer']);
     var ADH_PlayerState_GetOwningController = new NativeFunction(base.add(0x277E4F0), 'pointer', ['pointer']);
     var ADH_PlayerState_SetSpellChargeTier = new NativeFunction(base.add(0x277FAD0), 'void', ['pointer', 'int8']);
+    var ADH_GameStateBase_SetTimeOfDay = new NativeFunction(
+        base.add(0x26D4120),
+        'void',
+        ['pointer', 'float', 'uint8']
+    );
     var K2_SetActorLocation = new NativeFunction(
         base.add(0x40A0430),
         'uint8',
@@ -439,8 +447,20 @@ if (mod !== null) {
         }
     }
 
+    function keepDaylight() {
+        if (!MatchActive) return;
+        try {
+            var gameState = getGameState();
+            if (!gameState.isNull()) ADH_GameStateBase_SetTimeOfDay(gameState, FixedTimeOfDay, 1);
+        } catch (e) {
+            console.log('[山顶飞天甘油] 固定白天失败: ' + e);
+        }
+    }
+
     setInterval(updateTrainees, MonitorIntervalMs);
     setInterval(clearNearbyPredators, PredatorPollMs);
+    setInterval(keepDaylight, DaytimeRefreshMs);
     setTimeout(updateTrainees, 500);
+    setTimeout(keepDaylight, 500);
     send('山顶飞天甘油训练: 已加载（第一阶段，不移动船只）');
 }

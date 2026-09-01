@@ -17,6 +17,7 @@ const tierCalls = [];
 const damageCalls = [];
 const teleportCalls = [];
 const destroyed = [];
+const timeCalls = [];
 let nitroAdds = 0;
 let inventoryHasNitro = false;
 let nextAllocation = 0x900000;
@@ -116,6 +117,8 @@ global.NativeFunction = function (address, returnType, argumentTypes) {
       return ps => ps.equals(playerState) ? controller : new Pointer(0);
     case 0x277FAD0:
       return (ps, tier) => tierCalls.push([ps.value, tier]);
+    case 0x26D4120:
+      return (state, time, immediate) => timeCalls.push([state.value, time, immediate]);
     case 0x40A0430:
       return (actor, location) => {
         teleportCalls.push(location.slice());
@@ -183,6 +186,11 @@ if (!damageCalls.some(call => call[0] === pawn.value && call[1] === 0)) {
 }
 if (memory.get(pawn.value + 0xA30) !== 0 || memory.get(pawn.value + 0xA31) !== 0) {
   throw new Error('hunger or warmth update remained enabled');
+}
+
+intervals.get(5000)();
+if (!timeCalls.some(call => call[0] === gameState.value && call[1] === 12 && call[2] === 1)) {
+  throw new Error('time of day was not fixed at noon');
 }
 
 intervals.get(500)();
