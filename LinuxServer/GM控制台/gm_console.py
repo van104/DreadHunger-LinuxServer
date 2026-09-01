@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlsplit
 import threading
 
-VERSION = "1.7.1"
+VERSION = "1.7.2"
 DEFAULT_PASSWORD = "admin"
 COMMAND_FILE = "gm_commands.json"
 PLAYER_LIST_FILE = "gm_player_list.json"
@@ -289,6 +289,19 @@ class GMConsole:
             raise ValueError("所选职业当前不在线")
         return role
 
+    def _validate_online_player(self, value: Any) -> str:
+        player_name = str(value or "").strip()
+        if not player_name:
+            raise ValueError("未指定玩家")
+        players = self.get_players()
+        if players.get("stale"):
+            raise ValueError("玩家列表已过期，请确认 Frida 正常运行")
+        normalized_name = normalize_player_name(player_name)
+        for player in players.get("players", []):
+            if normalize_player_name(player.get("name")) == normalized_name:
+                return str(player.get("name") or player_name)
+        raise ValueError("玩家当前不在线")
+
     def _normalize_coordinates(self, params: dict) -> dict:
         coordinates = {}
         for key in ("x", "y", "z"):
@@ -339,8 +352,13 @@ class GMConsole:
         normalized = dict(params or {})
         if action == "give_item" and str(normalized.get("role") or "").strip() == "all":
             normalized["role"] = "all"
-        elif action in {"give_item", "teleport_player", "execute_player"}:
+        elif action in {"give_item", "execute_player"}:
             normalized["role"] = self._validate_online_role(normalized.get("role"))
+        elif action == "teleport_player":
+            if normalized.get("player"):
+                normalized["player"] = self._validate_online_player(normalized.get("player"))
+            else:
+                normalized["role"] = self._validate_online_role(normalized.get("role"))
         elif action in {"revive_player", "teleport_to_ship"} and normalized.get("role"):
             normalized["role"] = self._validate_online_role(normalized.get("role"))
 
@@ -1526,9 +1544,9 @@ def app_html() -> str:
                     <el-button type="danger" plain :disabled="!formCoordinate.preset" @click="removeTeleportPreset">删除</el-button>
                   </div>
                 </el-form-item>
-                <el-form-item label="选择目标职业">
-                  <el-select v-model="formCoordinate.role" placeholder="选择在线职业" style="width:100%" @change="fillCurrentCoordinates">
-                    <el-option v-for="p in rolePlayerOptions" :key="p.role_id" :label="p.role + ' · ' + p.name" :value="p.role_id" :disabled="!p.has_pawn || p.is_dead" />
+                <el-form-item label="选择目标玩家">
+                  <el-select v-model="formCoordinate.player" placeholder="选择在线玩家" style="width:100%" @change="fillCurrentCoordinates">
+                    <el-option v-for="p in playerList" :key="p.index" :label="p.name + (p.role ? ' · ' + p.role : '') + ' #' + p.index" :value="p.name" :disabled="!p.has_pawn || p.is_dead" />
                   </el-select>
                 </el-form-item>
                 <el-row :gutter="10">
@@ -1714,7 +1732,7 @@ const app = createApp({
     const formKick = reactive({ player: '', reason: '' });
     const formRevive = reactive({ player: '' });
     const formTeleport = reactive({ player: 'all' });
-    const formCoordinate = reactive({ role: '', preset: '', presetName: '', x: 0, y: 0, z: 0 });
+    const formCoordinate = reactive({ player: '', preset: '', presetName: '', x: 0, y: 0, z: 0 });
     const formItem = reactive({ role: '', item: '', quantity: 1 });
     const formExecute = reactive({ role: '' });
     const formBlacklist = reactive({ player: '', reason_code: 'quit_after_death', reason: '' });
@@ -1829,9 +1847,9 @@ const app = createApp({
     }
 
     function fillCurrentCoordinates() {
-      const player = playerList.value.find(p => p.role_id === formCoordinate.role);
+      const player = playerList.value.find(p => p.name === formCoordinate.player);
       if (!player || !player.has_pawn) {
-        if (formCoordinate.role) ElMessage.warning('当前职业没有可用坐标');
+        if (formCoordinate.player) ElMessage.warning('当前玩家没有可用坐标');
         return;
       }
       formCoordinate.x = Number(player.x);
@@ -1901,8 +1919,8 @@ const app = createApp({
       formRevive.player = name;
       formTeleport.player = name;
       formBlacklist.player = name;
+      formCoordinate.player = name;
       if (player && player.role_id) {
-        formCoordinate.role = player.role_id;
         formItem.role = player.role_id;
         formExecute.role = player.role_id;
         fillCurrentCoordinates();
@@ -2025,11 +2043,11 @@ const app = createApp({
       if (action === 'teleport_player') {
         const rawCoordinates = [params.x, params.y, params.z];
         const coordinates = rawCoordinates.map(Number);
-        if (!params.role || rawCoordinates.some(value => value === null || value === '' || typeof value === 'boolean') || coordinates.some(value => !Number.isFinite(value) || Math.abs(value) > 10000000)) {
-          ElMessage.warning('请选择在线职业并填写安全范围内的有效坐标');
+        if (!params.player || rawCoordinates.some(value => value === null || value === '' || typeof value === 'boolean') || coordinates.some(value => !Number.isFinite(value) || Math.abs(value) > 10000000)) {
+          ElMessage.warning('请选择在线玩家并填写安全范围内的有效坐标');
           return;
         }
-        params = { role: params.role, x: coordinates[0], y: coordinates[1], z: coordinates[2] };
+        params = { player: params.player, x: coordinates[0], y: coordinates[1], z: coordinates[2] };
       }
       isSubmitting.value = true;
       try {

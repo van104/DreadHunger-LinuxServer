@@ -76,7 +76,7 @@ python3 GM控制台/gm_console.py --root /path/to/LinuxServer --host 0.0.0.0 --p
 
 启动成功输出：
 ```
-[GM控制台] Dread Hunger GM Console v1.7.1
+[GM控制台] Dread Hunger GM Console v1.7.2
 [GM控制台] 根目录: /path/to/LinuxServer
 [GM控制台] 面板: http://0.0.0.0:9900
 [GM控制台] 认证: 已启用（密码不会写入日志）
@@ -144,7 +144,7 @@ python3 GM控制台/gm_console.py --password 你的密码
 - 点击"传送"
 - 玩家会被传送到移动后战舰的实时世界位置，不再使用开局时的静态出生坐标
 - 在线列表每秒刷新 Unreal 世界坐标（单位厘米）
-- 也可按职业填写 X/Y/Z；传送后坐标误差不超过 5 厘米才算成功
+- 也可选择指定在线玩家并填写 X/Y/Z；传送后坐标误差不超过 5 厘米才算成功
 - XYZ 可保存为命名预设；下次选择预设即可自动填入坐标，也可删除或用同名覆盖
 
 #### 实时发送物品

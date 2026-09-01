@@ -59,7 +59,7 @@ GWorld（全局指针）
   └─ UWorld
        └─ +0x118 : AuthorityGameMode  (AGameMode / ADH_GameMode)
             └─ +0x280 : GameState      (AGameState / ADH_GameState)
-                 └─ +0x2B0 : Warship   (ADH_Warship)
+                 └─ +0x2A8 : Warship   (ADH_Warship)
 ```
 
 ```js
@@ -75,7 +75,8 @@ var gs     = gm.add(0x280).readPointer();      // AGameMode::GameState
 |---|---|---|
 | `+0x238` | TArray | PlayerArray（`+0`=Data 指针，`+8`=Num 数量） |
 | `+0x26C` | int32 | MatchState（枚举值） |
-| `+0x2B0` | pointer | Warship（ADH_Warship*） |
+| `+0x2A8` | pointer | Warship（ADH_Warship*；`SetWarship` 写入位置） |
+| `+0x2B0` | pointer | EscapeVolume（不能当作 Warship） |
 | `+0x415` | byte | SetWinningTeam 内部检查标志位 |
 | `+0x420` | int32 | SetWinningTeam 检查（==8 才调 OnRep） |
 | `+0x514` | byte | **EPlayerTeam**（0=未设置，1=Explorer，2=Thrall） |
@@ -258,7 +259,7 @@ var ActionHandlers = {
 | `POST` | `/api/gm/teleport_presets/save` | 新增或按同名覆盖预设点位 |
 | `POST` | `/api/gm/teleport_presets/remove` | 删除指定名称的预设点位 |
 | `POST` | `/api/gm/give_item` | `{"role":"Captain","item":"flintlock","quantity":5}` |
-| `POST` | `/api/gm/teleport_player` | `{"role":"Captain","x":100,"y":200,"z":300}` |
+| `POST` | `/api/gm/teleport_player` | `{"player":"玩家名","x":100,"y":200,"z":300}`；继续兼容旧 `role` 参数 |
 | `POST` | `/api/gm/execute_player` | `{"role":"Captain"}` |
 
 `revive_player` 和 `teleport_to_ship` 同时接受新的 `role` 与旧的 `player` 参数。原生成功返回 `200`，原生失败返回 `409`，3 秒内未收到 Frida 结果返回 `202 queued`。
@@ -371,4 +372,4 @@ curl http://127.0.0.1:8800/api/state
 
 ---
 
-*文档版本：v1.1 | 2026-09-01 更新 GM 原生结果、复活、传送、物品和处决接口 | 游戏二进制日期：2024-01-25*
+*文档版本：v1.2 | 2026-09-02 修正动态战舰指针并支持按玩家坐标传送 | 游戏二进制日期：2024-01-25*

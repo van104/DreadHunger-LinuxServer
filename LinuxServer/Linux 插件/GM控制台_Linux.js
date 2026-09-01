@@ -192,8 +192,8 @@ if (mod !== null) {
         try {
             var gs = getGameState();
             if (!gs) return null;
-            /* ADH_GameStateBase::Warship at offset 0x2B0 */
-            var warship = gs.add(0x2B0).readPointer();
+            /* ADH_GameStateBase::SetWarship 写入 +0x2A8；+0x2B0 是 EscapeVolume。 */
+            var warship = gs.add(0x2A8).readPointer();
             return warship.isNull() ? null : warship;
         } catch (e) { return null; }
     }

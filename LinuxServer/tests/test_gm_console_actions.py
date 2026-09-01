@@ -123,8 +123,9 @@ class GMActionTests(unittest.TestCase):
             console = self.make_console(Path(temp_dir))
             valid = console.normalize_action_params(
                 "teleport_player",
-                {"role": "Captain", "x": 1.25, "y": -2, "z": 3},
+                {"player": "测试船长", "x": 1.25, "y": -2, "z": 3},
             )
+            self.assertEqual(valid["player"], "测试船长")
             self.assertEqual(valid["x"], 1.25)
             self.assertEqual(valid["y"], -2.0)
 
@@ -132,8 +133,24 @@ class GMActionTests(unittest.TestCase):
                 with self.subTest(value=value), self.assertRaises(ValueError):
                     console.normalize_action_params(
                         "teleport_player",
-                        {"role": "Captain", "x": value, "y": 0, "z": 0},
+                        {"player": "测试船长", "x": value, "y": 0, "z": 0},
                     )
+
+    def test_coordinate_teleport_targets_online_player_and_keeps_role_compatibility(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            console = self.make_console(Path(temp_dir))
+            by_player = console.normalize_action_params(
+                "teleport_player", {"player": "测试船长", "x": 1, "y": 2, "z": 3}
+            )
+            by_role = console.normalize_action_params(
+                "teleport_player", {"role": "Captain", "x": 1, "y": 2, "z": 3}
+            )
+            self.assertEqual(by_player["player"], "测试船长")
+            self.assertEqual(by_role["role"], "Captain")
+            with self.assertRaisesRegex(ValueError, "玩家当前不在线"):
+                console.normalize_action_params(
+                    "teleport_player", {"player": "离线玩家", "x": 1, "y": 2, "z": 3}
+                )
 
     def test_revive_and_ship_teleport_keep_player_name_compatibility(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -265,6 +282,8 @@ class GMPluginSourceTests(unittest.TestCase):
         self.assertNotIn("base.add(0x2D6FA10)", source)
         self.assertIn("base.add(0x40A0430)", source)
         self.assertIn("base.add(0x284FEA0)", source)
+        self.assertIn("gs.add(0x2A8).readPointer()", source)
+        self.assertNotIn("gs.add(0x2B0).readPointer()", source)
         self.assertNotIn("warship.add(0x03BC)", source)
         self.assertIn("getShipReturnLocations", source)
         self.assertIn("gmSendTopMessage('军械库已开启')", source)
@@ -273,6 +292,12 @@ class GMPluginSourceTests(unittest.TestCase):
         self.assertIn("'give_item':", source)
         self.assertIn("'teleport_player':", source)
         self.assertIn("'execute_player':", source)
+
+    def test_coordinate_teleport_ui_selects_player_name(self):
+        source = (LINUX_SERVER_ROOT / "GM控制台" / "gm_console.py").read_text(encoding="utf-8")
+        self.assertIn('v-model="formCoordinate.player"', source)
+        self.assertIn("const formCoordinate = reactive({ player: ''", source)
+        self.assertIn("params = { player: params.player", source)
 
 
 class GMActionAPITests(unittest.TestCase):
@@ -349,7 +374,7 @@ class GMActionAPITests(unittest.TestCase):
                     status, failure = request(
                         "POST",
                         "/api/gm/teleport_player",
-                        {"role": "Captain", "x": 1, "y": 2, "z": 3},
+                        {"player": "测试船长", "x": 1, "y": 2, "z": 3},
                         token,
                     )
                 self.assertEqual(status, 409)
