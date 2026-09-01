@@ -2,7 +2,7 @@
 
 **简体中文** | [English](README_EN.md)
 
-这是一个面向 Linux Dread Hunger 私服的管理工具包，包含：
+这是一个面向 Linux Dread Hunger 恐惧饥荒（海上狼人杀）私服的管理工具包，包含：
 
 - Linux Web 开服器：启动、停止、配置服务器和管理插件。
 - Linux GM Web 控制台：查看玩家并执行 GM 指令。
