@@ -75,7 +75,8 @@ if (mod !== null) {
     var InventoryManagerOffset = 0x808;
     var RootComponentOffset = 0x130;
     var PawnOffset = 0x250;
-    var SpellTierOne = 1;
+    /* ETotemSpellTiers: 0=TST_UNDEFINED, 1=TST_ZERO, 2=TST_ONE。 */
+    var SpellTierOne = 2;
 
     var MatchActive = false;
     var MatchSequence = 0;

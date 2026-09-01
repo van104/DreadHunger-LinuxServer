@@ -175,7 +175,7 @@ if (target[0] !== 4434.21 || target[1] !== 6397.93 || target[2] !== 7297.65) {
   throw new Error('wrong training coordinates');
 }
 if (nitroAdds !== 1 || !inventoryHasNitro) throw new Error('nitro was not added');
-if (!tierCalls.some(call => call[0] === playerState.value && call[1] === 1)) {
+if (!tierCalls.some(call => call[0] === playerState.value && call[1] === 2)) {
   throw new Error('spell charge was not locked to tier one');
 }
 if (!damageCalls.some(call => call[0] === pawn.value && call[1] === 0)) {
