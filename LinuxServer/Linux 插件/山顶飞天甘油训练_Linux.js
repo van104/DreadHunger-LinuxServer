@@ -35,6 +35,7 @@ if (mod !== null) {
     var DaytimeRefreshMs = 5000;
     var FixedTimeOfDay = 12.0;
     var NitroPickupClassPath = '/Game/Blueprints/Environment/Nitro/BP_Nitro_Pickup.BP_Nitro_Pickup_C';
+    var NitroInventoryClassPath = '/Game/Blueprints/Environment/Nitro/BP_Nitro_Inventory.BP_Nitro_Inventory_C';
     /* ==================== */
 
     var GWorld = base.add(0x5C9B6D0);
@@ -73,6 +74,7 @@ if (mod !== null) {
     var ADH_AIControllerPredator_StaticClass = new NativeFunction(base.add(0x27D1C40), 'pointer', []);
     var ADH_PackIce_StaticClass = new NativeFunction(base.add(0x2827C00), 'pointer', []);
     var ADH_HullBreach_StaticClass = new NativeFunction(base.add(0x2802760), 'pointer', []);
+    var ADH_InventoryPickup_Launch = new NativeFunction(base.add(0x26EC670), 'void', ['pointer', 'uint8']);
     var AActor_Destroy = new NativeFunction(base.add(0x40950A0), 'uint8', ['pointer', 'uint8', 'uint8']);
     var FActorSpawnParametersCtor = new NativeFunction(base.add(0x478C420), 'void', ['pointer']);
     var UWorld_SpawnActor = new NativeFunction(
@@ -91,13 +93,16 @@ if (mod !== null) {
     var WarmthUpdateOffset = 0xA31;
     var RootComponentOffset = 0x130;
     var PawnOffset = 0x250;
-    var WarshipOffset = 0x2B0;
+    /* ADH_GameStateBase::SetWarship 写入 +0x2A8；+0x2B0 是 EscapeVolume。 */
+    var WarshipOffset = 0x2A8;
     var CurrentHullIntegrityOffset = 0x2A0;
     var MaxHullIntegrityOffset = 0x2A8;
     var PackIceRemovedCountOffset = 0x350;
     var ActorClassOffset = 0x10;
     var ActorTransformOffset = 0x1C0;
     var ActorTransformSize = 48;
+    var PickupInventoryClassOffset = 0x248;
+    var PickupDropMethodOffset = 0x2F0;
     /* ETotemSpellTiers: 0=TST_UNDEFINED, 1=TST_ZERO, 2=TST_ONE。 */
     var SpellTierOne = 2;
     var CooldownMultiplierOffset = 0x280;
@@ -111,6 +116,7 @@ if (mod !== null) {
     var Trainees = Object.create(null);
     var ShipReady = false;
     var NitroPickupClass = ptr(0);
+    var NitroInventoryClass = ptr(0);
     var PredatorClass = ptr(0);
     var PackIceClass = ptr(0);
     var HullBreachClass = ptr(0);
@@ -405,6 +411,22 @@ if (mod !== null) {
         return NitroPickupClass;
     }
 
+    function loadNitroInventoryClass() {
+        if (!NitroInventoryClass.isNull()) return NitroInventoryClass;
+        try {
+            var buffer = Memory.alloc((NitroInventoryClassPath.length + 1) * 2);
+            buffer.writeUtf16String(NitroInventoryClassPath);
+            var uclass = UClass_GetPrivateStaticClass();
+            NitroInventoryClass = StaticFindObject(uclass, ptr('0xffffffffffffffff'), buffer, 0);
+            if (NitroInventoryClass.isNull()) {
+                NitroInventoryClass = StaticLoadObject(uclass, ptr(0), buffer, ptr(0), 0, ptr(0), 1, ptr(0));
+            }
+        } catch (e) {
+            NitroInventoryClass = ptr(0);
+        }
+        return NitroInventoryClass;
+    }
+
     function makeSpawnTransform(position) {
         var transform = Memory.alloc(48);
         transform.writeFloat(0.0);
@@ -445,13 +467,18 @@ if (mod !== null) {
             var world = getWorld();
             if (world.isNull()) return false;
             var nitroClass = loadNitroPickupClass();
-            if (nitroClass.isNull()) return false;
+            var inventoryClass = loadNitroInventoryClass();
+            if (nitroClass.isNull() || inventoryClass.isNull()) return false;
             if (hasNitroAtRefreshPoint(world, nitroClass)) return true;
 
             var params = Memory.alloc(0x30);
             FActorSpawnParametersCtor(params);
             var actor = UWorld_SpawnActor(world, nitroClass, makeSpawnTransform(NitroRefreshPosition), params);
-            return isReadable(actor);
+            if (!isReadable(actor)) return false;
+            actor.add(PickupInventoryClassOffset).writePointer(inventoryClass);
+            actor.add(PickupDropMethodOffset).writeU8(1);
+            ADH_InventoryPickup_Launch(actor, 0);
+            return true;
         } catch (e) {
             console.log('[山顶飞天甘油] 刷新甘油失败: ' + e);
             return false;

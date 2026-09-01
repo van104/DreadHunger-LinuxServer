@@ -23,7 +23,9 @@ const autoMoveCalls = [];
 const shipOnRepCalls = [];
 const spawnedPackIce = [];
 const spawnedNitro = [];
+const launchedNitro = [];
 let nitroPickupPresent = false;
+let staticClassLookups = 0;
 let nextAllocation = 0x900000;
 
 class Pointer {
@@ -85,6 +87,7 @@ const controller = new Pointer(0x750000);
 const pawn = new Pointer(0x760000);
 const root = new Pointer(0x770000);
 const nitroPickupClass = new Pointer(0x790000);
+const nitroInventoryClass = new Pointer(0x782000);
 const nitroPickupData = new Pointer(0x781000);
 let nitroPickupActor = new Pointer(0);
 const predatorClass = new Pointer(0x7A0000);
@@ -96,6 +99,7 @@ const farController = new Pointer(0x7F0000);
 const farPawn = new Pointer(0x800000);
 const farRoot = new Pointer(0x810000);
 const warship = new Pointer(0x890000);
+const escapeVolume = new Pointer(0x88F000);
 const warshipRoot = new Pointer(0x891000);
 const packIceClass = new Pointer(0x892000);
 const packIceActor = new Pointer(0x893000);
@@ -109,7 +113,8 @@ const hullBreachData = new Pointer(0x899000);
 memory.set(0x5E9B6D0, world.value);
 memory.set(world.value + 0x118, gameMode.value);
 memory.set(gameMode.value + 0x280, gameState.value);
-memory.set(gameState.value + 0x2B0, warship.value);
+memory.set(gameState.value + 0x2A8, warship.value);
+memory.set(gameState.value + 0x2B0, escapeVolume.value);
 memory.set(gameState.value + 0x238, playerData.value);
 memory.set(gameState.value + 0x240, 1);
 memory.set(playerData.value, playerState.value);
@@ -180,9 +185,9 @@ global.NativeFunction = function (address, returnType, argumentTypes) {
     case 0x2B9C070:
       return () => new Pointer(0x820000);
     case 0x2C95CA0:
-      return () => nitroPickupClass;
+      return () => (++staticClassLookups === 1 ? nitroPickupClass : nitroInventoryClass);
     case 0x2C97F00:
-      return () => nitroPickupClass;
+      return () => nitroInventoryClass;
     case 0x433F490:
       return (context, clazz, output) => {
         if (clazz.equals(predatorClass)) {
@@ -212,6 +217,8 @@ global.NativeFunction = function (address, returnType, argumentTypes) {
       return () => packIceClass;
     case 0x2802760:
       return () => hullBreachClass;
+    case 0x26EC670:
+      return actor => launchedNitro.push(actor.value);
     case 0x40950A0:
       return actor => { destroyed.push(actor.value); return 1; };
     case 0x478C420:
@@ -268,6 +275,12 @@ if (target[0] !== 4434.21 || target[1] !== 6397.93 || target[2] !== 7297.65) {
 if (spawnedNitro.length !== 1 || !nitroPickupPresent) throw new Error('nitro pickup was not spawned');
 if (spawnedNitro[0][0] !== 4434.21 || spawnedNitro[0][1] !== 6397.93 || spawnedNitro[0][2] !== 7347.65) {
   throw new Error('wrong nitro refresh coordinates');
+}
+if (memory.get(nitroPickupActor.value + 0x248) !== nitroInventoryClass.value) {
+  throw new Error('nitro pickup inventory class was not initialized');
+}
+if (memory.get(nitroPickupActor.value + 0x2F0) !== 1 || !launchedNitro.includes(nitroPickupActor.value)) {
+  throw new Error('nitro pickup physics was not launched');
 }
 if (!tierCalls.some(call => call[0] === playerState.value && call[1] === 2)) {
   throw new Error('spell charge was not locked to tier one');
