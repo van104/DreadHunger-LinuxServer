@@ -144,7 +144,7 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-本项目自行编写的代码采用 MIT License，详见根目录 [LICENSE](LICENSE)。游戏本体及其他第三方组件不属于本许可证范围。
+本项目自行编写的代码采用 Polyform Noncommercial License 1.0.0，详见根目录 [LICENSE](LICENSE)。游戏本体及其他第三方组件不属于本许可证范围。
 
 ## 安全说明
 
