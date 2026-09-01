@@ -9,7 +9,7 @@ PLUGIN_PATH = LINUX_SERVER_ROOT / "Linux 插件" / "山顶飞天甘油训练_Lin
 
 
 NODE_HARNESS = r"""
-const source = JSON.parse(process.argv[1]);
+const source = JSON.parse(require('fs').readFileSync(0, 'utf8'));
 const memory = new Map();
 const hooks = new Map();
 const intervals = new Map();
@@ -19,6 +19,9 @@ const damageCalls = [];
 const teleportCalls = [];
 const destroyed = [];
 const timeCalls = [];
+const autoMoveCalls = [];
+const shipOnRepCalls = [];
+const spawnedPackIce = [];
 let nitroAdds = 0;
 let inventoryHasNitro = false;
 let nextAllocation = 0x900000;
@@ -53,6 +56,9 @@ global.Memory = {
     const result = new Pointer(nextAllocation);
     nextAllocation += Math.max(size, 16) + 16;
     return result;
+  },
+  copy: (target, source, size) => {
+    for (let i = 0; i < size; i++) memory.set(target.value + i, memory.get(source.value + i) || 0);
   }
 };
 global.Process = {
@@ -88,10 +94,21 @@ const nearRoot = new Pointer(0x7E0000);
 const farController = new Pointer(0x7F0000);
 const farPawn = new Pointer(0x800000);
 const farRoot = new Pointer(0x810000);
+const warship = new Pointer(0x890000);
+const warshipRoot = new Pointer(0x891000);
+const packIceClass = new Pointer(0x892000);
+const packIceActor = new Pointer(0x893000);
+const packIceRoot = new Pointer(0x894000);
+const packIceActorClass = new Pointer(0x895000);
+const packIceData = new Pointer(0x896000);
+const hullBreachClass = new Pointer(0x897000);
+const hullBreachActor = new Pointer(0x898000);
+const hullBreachData = new Pointer(0x899000);
 
 memory.set(0x5E9B6D0, world.value);
 memory.set(world.value + 0x118, gameMode.value);
 memory.set(gameMode.value + 0x280, gameState.value);
+memory.set(gameState.value + 0x2B0, warship.value);
 memory.set(gameState.value + 0x238, playerData.value);
 memory.set(gameState.value + 0x240, 1);
 memory.set(playerData.value, playerState.value);
@@ -101,6 +118,22 @@ memory.set(pawn.value + 0x808, inventory.value);
 memory.set(root.value + 0x1D0, 0);
 memory.set(root.value + 0x1D4, 0);
 memory.set(root.value + 0x1D8, 0);
+memory.set(warship.value + 0x130, warshipRoot.value);
+memory.set(warshipRoot.value + 0x1D0, 0);
+memory.set(warshipRoot.value + 0x1D4, 0);
+memory.set(warshipRoot.value + 0x1D8, 0);
+memory.set(warship.value + 0x2A0, 500);
+memory.set(warship.value + 0x2A8, 10000);
+
+memory.set(packIceData.value, packIceActor.value);
+memory.set(packIceActor.value + 0x10, packIceActorClass.value);
+memory.set(packIceActor.value + 0x130, packIceRoot.value);
+memory.set(packIceActor.value + 0x350, 0);
+memory.set(packIceRoot.value + 0x1C0, 1);
+memory.set(packIceRoot.value + 0x1D0, 4000);
+memory.set(packIceRoot.value + 0x1D4, 200);
+memory.set(packIceRoot.value + 0x1D8, 100);
+memory.set(hullBreachData.value, hullBreachActor.value);
 
 memory.set(predatorData.value, nearController.value);
 memory.set(predatorData.value + 8, farController.value);
@@ -126,9 +159,13 @@ global.NativeFunction = function (address, returnType, argumentTypes) {
       return (ps, tier) => tierCalls.push([ps.value, tier]);
     case 0x26D4120:
       return (state, time, immediate) => timeCalls.push([state.value, time, immediate]);
+    case 0x279FD60:
+      return (ship, enabled) => autoMoveCalls.push([ship.value, enabled]);
+    case 0x279FCA0:
+      return ship => shipOnRepCalls.push(ship.value);
     case 0x40A0430:
       return (actor, location) => {
-        teleportCalls.push(location.slice());
+        teleportCalls.push({ actor: actor.value, location: location.slice() });
         const actorRoot = actor.add(0x130).readPointer();
         memory.set(actorRoot.value + 0x1D0, location[0]);
         memory.set(actorRoot.value + 0x1D4, location[1]);
@@ -156,14 +193,42 @@ global.NativeFunction = function (address, returnType, argumentTypes) {
       };
     case 0x433F490:
       return (context, clazz, output) => {
-        output.writePointer(predatorData);
-        output.add(8).writeU32(2);
-        output.add(12).writeU32(2);
+        if (clazz.equals(predatorClass)) {
+          output.writePointer(predatorData);
+          output.add(8).writeU32(2);
+          output.add(12).writeU32(2);
+        } else if (clazz.equals(packIceClass)) {
+          output.writePointer(packIceData);
+          output.add(8).writeU32(1);
+          output.add(12).writeU32(1);
+        } else if (clazz.equals(hullBreachClass)) {
+          output.writePointer(hullBreachData);
+          output.add(8).writeU32(1);
+          output.add(12).writeU32(1);
+        } else {
+          throw new Error('unexpected actor class');
+        }
       };
     case 0x27D1C40:
       return () => predatorClass;
+    case 0x2827C00:
+      return () => packIceClass;
+    case 0x2802760:
+      return () => hullBreachClass;
     case 0x40950A0:
       return actor => { destroyed.push(actor.value); return 1; };
+    case 0x478C420:
+      return () => {};
+    case 0x43EDEE0:
+      return (context, clazz) => {
+        const actor = new Pointer(0x89A000 + spawnedPackIce.length * 0x2000);
+        const actorRoot = actor.add(0x1000);
+        memory.set(actor.value + 0x10, clazz.value);
+        memory.set(actor.value + 0x130, actorRoot.value);
+        memory.set(actor.value + 0x350, 0);
+        spawnedPackIce.push([context.value, clazz.value, actor.value]);
+        return actor;
+      };
     case 0x2B130F0:
     case 0x2A13190:
     case 0x282B610:
@@ -179,8 +244,10 @@ const startup = timeouts.find(timer => timer.delay === 500);
 if (!startup) throw new Error('missing startup monitor');
 startup.callback();
 
-if (teleportCalls.length !== 1) throw new Error('player was not teleported at match start');
-const target = teleportCalls[0];
+const playerTeleports = teleportCalls.filter(call => call.actor === pawn.value);
+const shipTeleports = teleportCalls.filter(call => call.actor === warship.value);
+if (playerTeleports.length !== 1) throw new Error('player was not teleported at match start');
+const target = playerTeleports[0].location;
 if (target[0] !== 4434.21 || target[1] !== 6397.93 || target[2] !== 7297.65) {
   throw new Error('wrong training coordinates');
 }
@@ -193,6 +260,17 @@ if (!damageCalls.some(call => call[0] === pawn.value && call[1] === 0)) {
 }
 if (memory.get(pawn.value + 0xA30) !== 0 || memory.get(pawn.value + 0xA31) !== 0) {
   throw new Error('hunger or warmth update remained enabled');
+}
+if (shipTeleports.length !== 1) throw new Error('ship was not moved at match start');
+const shipTarget = shipTeleports[0].location;
+if (shipTarget[0] !== 3942.55 || shipTarget[1] !== 171.26 || shipTarget[2] !== 99.9) {
+  throw new Error('wrong ship coordinates');
+}
+if (!autoMoveCalls.some(call => call[0] === warship.value && call[1] === 0)) {
+  throw new Error('ship auto move was not disabled');
+}
+if (memory.get(warship.value + 0x2A0) !== 10000 || shipOnRepCalls.length !== 1) {
+  throw new Error('ship damage was not reset at match start');
 }
 
 const spellManager = new Pointer(0x840000);
@@ -236,6 +314,10 @@ if (!timeCalls.some(call => call[0] === gameState.value && call[1] === 12 && cal
 intervals.get(500)();
 if (nitroAdds !== 1) throw new Error('an existing nitro was duplicated');
 
+inventoryHasNitro = false;
+intervals.get(500)();
+if (nitroAdds !== 2 || !inventoryHasNitro) throw new Error('dropped nitro was not automatically replaced');
+
 intervals.get(2000)();
 if (!destroyed.includes(nearPawn.value) || !destroyed.includes(nearController.value)) {
   throw new Error('nearby predator was not removed');
@@ -250,9 +332,28 @@ const reset = timeouts.find(timer => timer.delay === 10000);
 if (!reset) throw new Error('flight reset was not scheduled');
 
 inventoryHasNitro = false;
+memory.set(warship.value + 0x2A0, 900);
+memory.set(packIceActor.value + 0x350, 3);
+destroyed.length = 0;
 reset.callback();
-if (teleportCalls.length !== 2) throw new Error('player was not returned after ten seconds');
-if (nitroAdds !== 2 || !inventoryHasNitro) throw new Error('nitro was not replenished after reset');
+if (teleportCalls.filter(call => call.actor === pawn.value).length !== 2) {
+  throw new Error('player was not returned after ten seconds');
+}
+if (teleportCalls.filter(call => call.actor === warship.value).length !== 2) {
+  throw new Error('ship was not returned after flight reset');
+}
+if (nitroAdds !== 3 || !inventoryHasNitro) throw new Error('nitro was not replenished after reset');
+if (memory.get(warship.value + 0x2A0) !== 10000 || shipOnRepCalls.length !== 2) {
+  throw new Error('ship damage was not reset after flight');
+}
+if (!destroyed.includes(hullBreachActor.value)) throw new Error('hull breaches were not cleared');
+if (!destroyed.includes(packIceActor.value)) throw new Error('damaged pack ice was not removed');
+const iceRespawn = timeouts.find(timer => timer.delay === 100);
+if (!iceRespawn) throw new Error('damaged pack ice was not scheduled for respawn');
+iceRespawn.callback();
+if (spawnedPackIce.length !== 1 || spawnedPackIce[0][1] !== packIceActorClass.value) {
+  throw new Error('damaged pack ice was not restored from its original class');
+}
 """
 
 
@@ -260,7 +361,8 @@ class MountainNitroTrainingTests(unittest.TestCase):
     def test_training_cycle_and_predator_cleanup(self):
         source = PLUGIN_PATH.read_text(encoding="utf-8")
         result = subprocess.run(
-            ["node", "-e", NODE_HARNESS, json.dumps(source)],
+            ["node", "-e", NODE_HARNESS],
+            input=json.dumps(source),
             capture_output=True,
             text=True,
             encoding="utf-8",

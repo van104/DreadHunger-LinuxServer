@@ -1,7 +1,7 @@
 /*
   山顶飞天甘油训练 (Linux 服务端插件)
 
-  第一阶段功能:
+  功能:
   1. 开局把在线玩家传送到山顶训练点。
   2. 保证玩家背包内有一个硝化甘油。
   3. 玩家无敌，并停止饥饿与寒冷消耗。
@@ -10,9 +10,10 @@
   6. 自动清除训练点 60 米内的捕食者控制器及其 Pawn（包括附近的熊）。
   7. 对局时间固定在中午 12 点，不再进入黑夜。
   8. 灵界行走等技能在效果结束后立即清除冷却，可以连续练习。
+  9. 开局把船移动到训练水域；每次复位时恢复船体与受损浮冰。
+  10. 甘油离开背包后自动补发，不必跳崖触发复位。
 
   注意:
-  - 本阶段不移动船只，也不处理船只伤害。
   - 使用本插件时应停用“狼人无限技能”，否则两个插件会争用技能充能等级。
 */
 var mod = Process.findModuleByName('DreadHungerServer-Linux-Shipping');
@@ -22,8 +23,10 @@ if (mod !== null) {
 
     /* ===== 训练参数 ===== */
     var TrainingPosition = { x: 4434.21, y: 6397.93, z: 7297.65 };
+    var ShipPosition = { x: 3942.55, y: 171.26, z: 99.9 };
     var FlightDistance = 2500.0;
     var ResetDelayMs = 10000;
+    var IceRespawnDelayMs = 100;
     var PredatorClearRadius = 6000.0;
     var MonitorIntervalMs = 500;
     var PredatorPollMs = 2000;
@@ -41,6 +44,8 @@ if (mod !== null) {
         'void',
         ['pointer', 'float', 'uint8']
     );
+    var ADH_Warship_SetEnableAutoMove = new NativeFunction(base.add(0x279FD60), 'void', ['pointer', 'uint8']);
+    var ADH_Warship_OnRep_CurrentHullIntegrity = new NativeFunction(base.add(0x279FCA0), 'void', ['pointer']);
     var K2_SetActorLocation = new NativeFunction(
         base.add(0x40A0430),
         'uint8',
@@ -74,7 +79,15 @@ if (mod !== null) {
         ['pointer', 'pointer', 'pointer']
     );
     var ADH_AIControllerPredator_StaticClass = new NativeFunction(base.add(0x27D1C40), 'pointer', []);
+    var ADH_PackIce_StaticClass = new NativeFunction(base.add(0x2827C00), 'pointer', []);
+    var ADH_HullBreach_StaticClass = new NativeFunction(base.add(0x2802760), 'pointer', []);
     var AActor_Destroy = new NativeFunction(base.add(0x40950A0), 'uint8', ['pointer', 'uint8', 'uint8']);
+    var FActorSpawnParametersCtor = new NativeFunction(base.add(0x478C420), 'void', ['pointer']);
+    var UWorld_SpawnActor = new NativeFunction(
+        base.add(0x43EDEE0),
+        'pointer',
+        ['pointer', 'pointer', 'pointer', 'pointer']
+    );
     var FName_FName = new NativeFunction(base.add(0x2B130F0), 'void', ['pointer', 'pointer', 'int8']);
     var FText_FromName = new NativeFunction(base.add(0x2A13190), 'pointer', ['pointer', 'pointer']);
     var ReceiveThrallMessage = new NativeFunction(base.add(0x282B610), 'void', ['pointer', 'pointer', 'pointer']);
@@ -87,6 +100,13 @@ if (mod !== null) {
     var InventoryManagerOffset = 0x808;
     var RootComponentOffset = 0x130;
     var PawnOffset = 0x250;
+    var WarshipOffset = 0x2B0;
+    var CurrentHullIntegrityOffset = 0x2A0;
+    var MaxHullIntegrityOffset = 0x2A8;
+    var PackIceRemovedCountOffset = 0x350;
+    var ActorClassOffset = 0x10;
+    var ActorTransformOffset = 0x1C0;
+    var ActorTransformSize = 48;
     /* ETotemSpellTiers: 0=TST_UNDEFINED, 1=TST_ZERO, 2=TST_ONE。 */
     var SpellTierOne = 2;
     var CooldownMultiplierOffset = 0x280;
@@ -98,12 +118,25 @@ if (mod !== null) {
     var MatchActive = false;
     var MatchSequence = 0;
     var Trainees = Object.create(null);
+    var ShipReady = false;
     var NitroClass = ptr(0);
     var PredatorClass = ptr(0);
+    var PackIceClass = ptr(0);
+    var HullBreachClass = ptr(0);
+    var PackIceSnapshots = [];
+    var PackIceSnapshotsReady = false;
     var PredatorActors = Memory.alloc(16);
     PredatorActors.writePointer(ptr(0));
     PredatorActors.add(8).writeU32(0);
     PredatorActors.add(12).writeU32(0);
+    var PackIceActors = Memory.alloc(16);
+    PackIceActors.writePointer(ptr(0));
+    PackIceActors.add(8).writeU32(0);
+    PackIceActors.add(12).writeU32(0);
+    var HullBreachActors = Memory.alloc(16);
+    HullBreachActors.writePointer(ptr(0));
+    HullBreachActors.add(8).writeU32(0);
+    HullBreachActors.add(12).writeU32(0);
 
     function isReadable(address) {
         try {
@@ -150,6 +183,17 @@ if (mod !== null) {
             if (gameMode.isNull()) return ptr(0);
             var gameState = gameMode.add(0x280).readPointer();
             return isReadable(gameState) ? gameState : ptr(0);
+        } catch (e) {
+            return ptr(0);
+        }
+    }
+
+    function getWarship() {
+        try {
+            var gameState = getGameState();
+            if (gameState.isNull()) return ptr(0);
+            var warship = gameState.add(WarshipOffset).readPointer();
+            return isReadable(warship) ? warship : ptr(0);
         } catch (e) {
             return ptr(0);
         }
@@ -204,6 +248,131 @@ if (mod !== null) {
             console.log('[山顶飞天甘油] 传送失败: ' + e);
             return false;
         }
+    }
+
+    function setActorLocation(actor, target) {
+        try {
+            if (!isReadable(actor)) return false;
+            var hitResult = Memory.alloc(256);
+            K2_SetActorLocation(actor, [target.x, target.y, target.z], 0, hitResult, 1);
+            var location = getLocation(actor);
+            return location !== null && distanceSquared(location, target) <= 25.0;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function clearHullBreaches() {
+        try {
+            var world = getWorld();
+            if (world.isNull()) return;
+            if (HullBreachClass.isNull()) HullBreachClass = ADH_HullBreach_StaticClass();
+            if (HullBreachClass.isNull()) return;
+
+            UGameplayStatics_GetAllActorsOfClass(world, HullBreachClass, HullBreachActors);
+            var count = HullBreachActors.add(8).readU32();
+            var data = HullBreachActors.readPointer();
+            if (count > 256 || (count > 0 && !isReadable(data))) return;
+            for (var i = 0; i < count; i++) {
+                var breach = data.add(i * Process.pointerSize).readPointer();
+                if (isReadable(breach)) AActor_Destroy(breach, 0, 1);
+            }
+        } catch (e) {
+            console.log('[山顶飞天甘油] 清除船体破口失败: ' + e);
+        }
+    }
+
+    function resetWarship() {
+        try {
+            var warship = getWarship();
+            if (warship.isNull()) return false;
+            ADH_Warship_SetEnableAutoMove(warship, 0);
+            clearHullBreaches();
+            var maxHullIntegrity = warship.add(MaxHullIntegrityOffset).readFloat();
+            if (!Number.isFinite(maxHullIntegrity) || maxHullIntegrity <= 0.0) return false;
+            warship.add(CurrentHullIntegrityOffset).writeFloat(maxHullIntegrity);
+            ADH_Warship_OnRep_CurrentHullIntegrity(warship);
+            return setActorLocation(warship, ShipPosition);
+        } catch (e) {
+            console.log('[山顶飞天甘油] 复位船只失败: ' + e);
+            return false;
+        }
+    }
+
+    function capturePackIce() {
+        if (PackIceSnapshotsReady) return;
+        try {
+            var world = getWorld();
+            if (world.isNull()) return;
+            if (PackIceClass.isNull()) PackIceClass = ADH_PackIce_StaticClass();
+            if (PackIceClass.isNull()) return;
+
+            UGameplayStatics_GetAllActorsOfClass(world, PackIceClass, PackIceActors);
+            var count = PackIceActors.add(8).readU32();
+            var data = PackIceActors.readPointer();
+            if (count < 1 || count > 256 || !isReadable(data)) return;
+
+            var snapshots = [];
+            for (var i = 0; i < count; i++) {
+                var actor = data.add(i * Process.pointerSize).readPointer();
+                if (!isReadable(actor)) continue;
+                var actorClass = actor.add(ActorClassOffset).readPointer();
+                var root = actor.add(RootComponentOffset).readPointer();
+                if (!isReadable(actorClass) || !isReadable(root)) continue;
+                var transform = Memory.alloc(ActorTransformSize);
+                Memory.copy(transform, root.add(ActorTransformOffset), ActorTransformSize);
+                snapshots.push({ actor: actor, actorClass: actorClass, transform: transform });
+            }
+            if (snapshots.length > 0) {
+                PackIceSnapshots = snapshots;
+                PackIceSnapshotsReady = true;
+                console.log('[山顶飞天甘油] 已记录 ' + snapshots.length + ' 块浮冰初始状态');
+            }
+        } catch (e) {
+            console.log('[山顶飞天甘油] 记录浮冰失败: ' + e);
+        }
+    }
+
+    function restoreDamagedPackIce(sequence) {
+        if (!PackIceSnapshotsReady) return;
+        var damaged = [];
+        for (var i = 0; i < PackIceSnapshots.length; i++) {
+            var snapshot = PackIceSnapshots[i];
+            try {
+                var valid = isReadable(snapshot.actor) &&
+                    snapshot.actor.add(ActorClassOffset).readPointer().equals(snapshot.actorClass);
+                var removedCount = valid ? snapshot.actor.add(PackIceRemovedCountOffset).readS32() : 1;
+                if (removedCount <= 0) continue;
+                if (valid) AActor_Destroy(snapshot.actor, 0, 1);
+                snapshot.actor = ptr(0);
+                damaged.push(snapshot);
+            } catch (e) {
+                snapshot.actor = ptr(0);
+                damaged.push(snapshot);
+            }
+        }
+        if (damaged.length < 1) return;
+
+        setTimeout(function () {
+            if (!MatchActive || sequence !== MatchSequence) return;
+            var world = getWorld();
+            if (world.isNull()) return;
+            for (var i = 0; i < damaged.length; i++) {
+                var params = Memory.alloc(0x30);
+                FActorSpawnParametersCtor(params);
+                var actor = UWorld_SpawnActor(world, damaged[i].actorClass, damaged[i].transform, params);
+                if (isReadable(actor)) {
+                    damaged[i].actor = actor;
+                } else {
+                    console.log('[山顶飞天甘油] 浮冰重建失败，将在下次复位时重试');
+                }
+            }
+        }, IceRespawnDelayMs);
+    }
+
+    function resetTrainingWorld() {
+        ShipReady = resetWarship();
+        restoreDamagedPackIce(MatchSequence);
     }
 
     function applyProtection(pawn) {
@@ -344,6 +513,7 @@ if (mod !== null) {
             record.teleported = true;
             record.nitroReady = ensureNitro(pawn);
             record.resetScheduled = false;
+            resetTrainingWorld();
             notify(controller, '[训练] 已复位到山顶，可以继续练习');
         } catch (e) {
             record.resetScheduled = false;
@@ -367,6 +537,9 @@ if (mod !== null) {
                 MatchActive = false;
                 MatchSequence++;
                 Trainees = Object.create(null);
+                ShipReady = false;
+                PackIceSnapshots = [];
+                PackIceSnapshotsReady = false;
             }
             return;
         }
@@ -375,7 +548,13 @@ if (mod !== null) {
             MatchActive = true;
             MatchSequence++;
             Trainees = Object.create(null);
+            ShipReady = false;
+            PackIceSnapshots = [];
+            PackIceSnapshotsReady = false;
         }
+
+        capturePackIce();
+        if (!ShipReady) ShipReady = resetWarship();
 
         var players = listPlayers();
         var online = Object.create(null);
@@ -405,7 +584,7 @@ if (mod !== null) {
                     notify(player.controller, '[训练] 已到达山顶，背包内已准备硝化甘油');
                 }
             }
-            if (record.teleported && !record.nitroReady) {
+            if (record.teleported) {
                 record.nitroReady = ensureNitro(player.pawn);
             }
 
@@ -539,5 +718,5 @@ if (mod !== null) {
     setInterval(keepDaylight, DaytimeRefreshMs);
     setTimeout(updateTrainees, 500);
     setTimeout(keepDaylight, 500);
-    send('山顶飞天甘油训练: 已加载（第一阶段，不移动船只）');
+    send('山顶飞天甘油训练: 已加载（二阶段：船只、船损、浮冰与甘油复位）');
 }
