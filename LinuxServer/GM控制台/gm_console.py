@@ -30,7 +30,7 @@ TELEPORT_PRESETS_FILE = "gm_teleport_presets.json"
 WINNING_CARD_REWARD_FILE = "gm_winning_card_reward.json"
 DEFAULT_WINNING_CARD_REWARD = {
     "enabled": False,
-    "target": "winner",
+    "mode": "fixed",
     "delay_seconds": 30,
     "backpack_slots": 0,
     "items": [{"item": "coal", "quantity": 5}],
@@ -291,9 +291,9 @@ class GMConsole:
 
     def _normalize_winning_card_reward(self, params: dict) -> dict:
         enabled = params.get("enabled") is True
-        target = str(params.get("target") or "").strip()
-        if target not in {"winner", "random"}:
-            raise ValueError("奖励目标只能选择赢牌玩家或随机在线玩家")
+        mode = str(params.get("mode") or "fixed").strip()
+        if mode not in {"fixed", "random"}:
+            raise ValueError("奖励模式只能选择固定奖励或随机奖励")
 
         delay_seconds = params.get("delay_seconds")
         if isinstance(delay_seconds, bool) or not isinstance(delay_seconds, int) or not 0 <= delay_seconds <= 600:
@@ -332,7 +332,7 @@ class GMConsole:
             raise ValueError("公告内容不能超过 500 个字符")
         return {
             "enabled": enabled,
-            "target": target,
+            "mode": mode,
             "delay_seconds": delay_seconds,
             "backpack_slots": backpack_slots,
             "items": items,
@@ -1690,10 +1690,10 @@ def app_html() -> str:
                   <el-switch v-model="rewardConfig.enabled" active-text="启用" inactive-text="停用" />
                 </el-form-item>
                 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px">
-                  <el-form-item label="奖励目标">
-                    <el-select v-model="rewardConfig.target" style="width:100%">
-                      <el-option label="实际赢牌玩家" value="winner" />
-                      <el-option label="随机在线玩家" value="random" />
+                  <el-form-item label="奖励模式">
+                    <el-select v-model="rewardConfig.mode" style="width:100%">
+                      <el-option label="固定奖励（发放列表中全部物品）" value="fixed" />
+                      <el-option label="随机奖励（从列表抽取一种物品）" value="random" />
                     </el-select>
                   </el-form-item>
                   <el-form-item label="开局后发放（秒）">
@@ -1862,7 +1862,7 @@ const app = createApp({
     const formCoordinate = reactive({ player: '', preset: '', presetName: '', x: 0, y: 0, z: 0 });
     const formItem = reactive({ role: '', item: '', quantity: 1 });
     const rewardConfig = reactive({
-      enabled: false, target: 'winner', delay_seconds: 30, backpack_slots: 0,
+      enabled: false, mode: 'fixed', delay_seconds: 30, backpack_slots: 0,
       items: [{ item: 'coal', quantity: 5 }],
       announcement: '[牌局奖励] {player} 获得开局奖励：{rewards}'
     });
@@ -1978,7 +1978,7 @@ const app = createApp({
         const data = await api('/api/gm/winning-card-reward');
         const config = data.config || {};
         rewardConfig.enabled = config.enabled === true;
-        rewardConfig.target = config.target || 'winner';
+        rewardConfig.mode = config.mode || 'fixed';
         rewardConfig.delay_seconds = Number(config.delay_seconds ?? 30);
         rewardConfig.backpack_slots = Number(config.backpack_slots ?? 0);
         rewardConfig.items = Array.isArray(config.items)
@@ -2003,7 +2003,7 @@ const app = createApp({
       try {
         const payload = {
           enabled: rewardConfig.enabled === true,
-          target: rewardConfig.target,
+          mode: rewardConfig.mode,
           delay_seconds: Number(rewardConfig.delay_seconds),
           backpack_slots: Number(rewardConfig.backpack_slots),
           items: rewardConfig.items.map(entry => ({ item: entry.item, quantity: Number(entry.quantity) })),

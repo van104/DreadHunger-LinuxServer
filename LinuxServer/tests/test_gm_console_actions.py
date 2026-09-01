@@ -280,7 +280,7 @@ class GMActionTests(unittest.TestCase):
             console = self.make_console(root)
             saved = console.save_winning_card_reward({
                 "enabled": True,
-                "target": "winner",
+                "mode": "fixed",
                 "delay_seconds": 45,
                 "backpack_slots": 12,
                 "items": [
@@ -301,14 +301,14 @@ class GMActionTests(unittest.TestCase):
             console = self.make_console(Path(temp_dir))
             valid = {
                 "enabled": True,
-                "target": "random",
+                "mode": "random",
                 "delay_seconds": 0,
                 "backpack_slots": 0,
                 "items": [{"item": "coal", "quantity": 1}],
                 "announcement": "奖励 {player}",
             }
             invalid = [
-                {**valid, "target": "all"},
+                {**valid, "mode": "all"},
                 {**valid, "delay_seconds": 601},
                 {**valid, "backpack_slots": 31},
                 {**valid, "items": [{"item": "missing", "quantity": 1}]},
@@ -348,6 +348,8 @@ class GMPluginSourceTests(unittest.TestCase):
         console_source = (LINUX_SERVER_ROOT / "GM控制台" / "gm_console.py").read_text(encoding="utf-8")
         plugin_source = (LINUX_SERVER_ROOT / "Linux 插件" / "赢牌对家开船_Linux.js").read_text(encoding="utf-8")
         self.assertIn('name="card-reward"', console_source)
+        self.assertNotIn('label="随机在线玩家"', console_source)
+        self.assertIn('随机奖励（从列表抽取一种物品）', console_source)
         self.assertIn("/api/gm/winning-card-reward", console_source)
         self.assertIn("gm_winning_card_reward.json", plugin_source)
         self.assertIn("UDH_InventoryManager_SetStorageLimit", plugin_source)
@@ -389,7 +391,7 @@ class GMActionAPITests(unittest.TestCase):
                 status, reward = request(
                     "POST", "/api/gm/winning-card-reward",
                     {
-                        "enabled": True, "target": "random", "delay_seconds": 10,
+                        "enabled": True, "mode": "random", "delay_seconds": 10,
                         "backpack_slots": 10, "items": [{"item": "coal", "quantity": 3}],
                         "announcement": "{player}: {rewards}",
                     }, token,

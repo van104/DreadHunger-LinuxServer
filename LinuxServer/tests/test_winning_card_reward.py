@@ -173,38 +173,52 @@ const rewardTimer = timeouts.find(timer => timer.delay === 5000);
 if (!rewardTimer) throw new Error('configured reward delay was not scheduled');
 rewardTimer.callback();
 
-const expectedInventory = config.target === 'winner' ? inventory1.value : inventory2.value;
+const expectedInventory = inventory1.value;
 if (storageLimits.length !== 1 || storageLimits[0][0] !== expectedInventory || storageLimits[0][1] !== 12) {
   throw new Error('backpack reward target or size is wrong');
 }
-if (inventoryAdds.length !== 1 || inventoryAdds[0][0] !== expectedInventory || inventoryAdds[0][2] !== 3) {
-  throw new Error('item reward target or quantity is wrong');
+if (!inventoryAdds.every(entry => entry[0] === expectedInventory)) {
+  throw new Error('a non-winning player received the reward');
 }
-const expectedName = config.target === 'winner' ? '赢家甲' : '玩家乙';
-if (!messages.some(entry => entry[1].includes(expectedName) && entry[1].includes('煤炭 x3'))) {
+if (config.mode === 'fixed' && (inventoryAdds.length !== 2 || inventoryAdds[0][2] !== 3 || inventoryAdds[1][2] !== 1)) {
+  throw new Error('fixed reward did not grant every configured item');
+}
+if (config.mode === 'random' && (inventoryAdds.length !== 1 || inventoryAdds[0][2] !== 1)) {
+  throw new Error('random reward did not grant exactly one configured item');
+}
+const expectedReward = config.mode === 'fixed' ? '煤炭 x3' : '燧发手枪 x1';
+if (!messages.some(entry => entry[1].includes('赢家甲') && entry[1].includes(expectedReward))) {
   throw new Error('editable announcement was not broadcast');
 }
 """
 
 
 class WinningCardRewardTests(unittest.TestCase):
-    def test_winner_and_random_targets_receive_configured_reward(self):
+    def test_winner_receives_fixed_or_random_configured_reward(self):
         source = PLUGIN_PATH.read_text(encoding="utf-8")
-        for target in ("winner", "random"):
+        for mode in ("fixed", "random"):
             config = {
                 "enabled": True,
-                "target": target,
+                "mode": mode,
                 "delay_seconds": 5,
                 "backpack_slots": 12,
-                "items": [{
-                    "item": "coal",
-                    "item_name": "煤炭",
-                    "item_class": "/Game/Blueprints/Inventory/Coal/BP_Coal_Inventory.BP_Coal_Inventory_C",
-                    "quantity": 3,
-                }],
+                "items": [
+                    {
+                        "item": "coal",
+                        "item_name": "煤炭",
+                        "item_class": "/Game/Blueprints/Inventory/Coal/BP_Coal_Inventory.BP_Coal_Inventory_C",
+                        "quantity": 3,
+                    },
+                    {
+                        "item": "flintlock",
+                        "item_name": "燧发手枪",
+                        "item_class": "/Game/Blueprints/Inventory/Flintlock/BP_Flintlock_Inventory.BP_Flintlock_Inventory_C",
+                        "quantity": 1,
+                    },
+                ],
                 "announcement": "[牌局奖励] {player} 获得：{rewards}",
             }
-            with self.subTest(target=target):
+            with self.subTest(mode=mode):
                 result = subprocess.run(
                     ["node", "-e", NODE_HARNESS],
                     input=json.dumps({"source": source, "config": config}, ensure_ascii=False),

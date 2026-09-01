@@ -169,7 +169,8 @@ if (mod !== null) {
         try {
             var config = JSON.parse(File.readAllText(RewardConfigFile));
             if (!config || config.enabled !== true) return null;
-            if (config.target !== 'winner' && config.target !== 'random') return null;
+            config.mode = config.mode || 'fixed';
+            if (config.mode !== 'fixed' && config.mode !== 'random') return null;
             if (!Number.isInteger(config.delay_seconds) || config.delay_seconds < 0 || config.delay_seconds > 600) return null;
             if (!Number.isInteger(config.backpack_slots) || config.backpack_slots < 0 || config.backpack_slots > 30) return null;
             if (!Array.isArray(config.items) || config.items.length > 8) return null;
@@ -204,10 +205,9 @@ if (mod !== null) {
         return players;
     }
 
-    function resolveRewardPlayer(config, winnerInfo) {
+    function resolveRewardPlayer(winnerInfo) {
         var players = getRewardPlayers();
         if (players.length < 1) return null;
-        if (config.target === 'random') return players[Math.floor(Math.random() * players.length)];
         for (var i = 0; i < players.length; i++) {
             if (winnerInfo && players[i].playerState.equals(winnerInfo.ps)) return players[i];
         }
@@ -510,7 +510,7 @@ if (mod !== null) {
 
     function deliverWinningReward(config, winnerInfo, retry) {
         if (!RewardMatchActive || RewardDelivered) return;
-        var player = resolveRewardPlayer(config, winnerInfo);
+        var player = resolveRewardPlayer(winnerInfo);
         if (player === null) {
             if (retry < 15) setTimeout(function () { deliverWinningReward(config, winnerInfo, retry + 1); }, 1000);
             return;
@@ -525,9 +525,13 @@ if (mod !== null) {
             var backpackSlots = Number(config.backpack_slots) || 0;
             if (backpackSlots > 0) UDH_InventoryManager_SetStorageLimit(inventory, backpackSlots);
             var parts = [];
-            for (var i = 0; i < config.items.length; i++) {
-                var added = addRewardItem(player, config.items[i]);
-                if (added > 0) parts.push(String(config.items[i].item_name || config.items[i].item) + ' x' + added);
+            var rewardItems = config.items;
+            if (config.mode === 'random' && rewardItems.length > 0) {
+                rewardItems = [rewardItems[Math.floor(Math.random() * rewardItems.length)]];
+            }
+            for (var i = 0; i < rewardItems.length; i++) {
+                var added = addRewardItem(player, rewardItems[i]);
+                if (added > 0) parts.push(String(rewardItems[i].item_name || rewardItems[i].item) + ' x' + added);
             }
             if (backpackSlots < 1 && parts.length < 1) {
                 console.log('[赢牌奖励] 没有物资成功加入 ' + player.name + ' 的背包');
