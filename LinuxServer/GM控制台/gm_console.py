@@ -1691,10 +1691,10 @@ def app_html() -> str:
                 </el-form-item>
                 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px">
                   <el-form-item label="奖励模式">
-                    <el-select v-model="rewardConfig.mode" style="width:100%">
-                      <el-option label="固定奖励（发放列表中全部物品）" value="fixed" />
-                      <el-option label="随机奖励（从列表抽取一种物品）" value="random" />
-                    </el-select>
+                    <el-radio-group v-model="rewardConfig.mode" size="small" style="display:flex;flex-wrap:wrap;row-gap:6px">
+                      <el-radio-button label="fixed">固定奖励（全部发放）</el-radio-button>
+                      <el-radio-button label="random">随机奖励（随机一种）</el-radio-button>
+                    </el-radio-group>
                   </el-form-item>
                   <el-form-item label="开局后发放（秒）">
                     <el-input-number v-model="rewardConfig.delay_seconds" :min="0" :max="600" :step="1" style="width:100%" />
@@ -1705,14 +1705,14 @@ def app_html() -> str:
                 </div>
                 <el-form-item label="奖励物品（最多 8 种，每种 1–20 个）">
                   <div style="width:100%;display:flex;flex-direction:column;gap:8px">
-                    <div v-for="(reward, index) in rewardConfig.items" :key="index" style="display:flex;gap:8px;align-items:center">
-                      <el-select v-model="reward.item" filterable placeholder="选择物品" style="flex:1">
+                    <div v-for="(reward, index) in rewardConfig.items" :key="index" style="display:grid;grid-template-columns:minmax(0,1fr) 120px 78px;gap:8px;align-items:center">
+                      <el-select v-model="reward.item" filterable placeholder="选择物品" style="width:100%">
                         <el-option-group v-for="(items, category) in itemGroups" :key="category" :label="category">
                           <el-option v-for="item in items" :key="item.id" :value="item.id" :label="item.name + (item.special ? ' ⚠' : '')" />
                         </el-option-group>
                       </el-select>
                       <el-input-number v-model="reward.quantity" :min="1" :max="20" :step="1" style="width:120px" />
-                      <el-button type="danger" plain :icon="Delete" @click="removeRewardItem(index)" />
+                      <el-button type="danger" plain :icon="Delete" style="width:100%" @click="removeRewardItem(index)">删除</el-button>
                     </div>
                     <el-button v-if="rewardConfig.items.length < 8" plain :icon="Box" @click="addRewardItem">添加奖励物品</el-button>
                   </div>
