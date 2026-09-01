@@ -274,6 +274,51 @@ class GMActionTests(unittest.TestCase):
             self.assertTrue(player["has_pawn"])
             self.assertFalse(player["is_dead"])
 
+    def test_winning_card_reward_config_persists_resolved_items(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            console = self.make_console(root)
+            saved = console.save_winning_card_reward({
+                "enabled": True,
+                "target": "winner",
+                "delay_seconds": 45,
+                "backpack_slots": 12,
+                "items": [
+                    {"item": "coal", "quantity": 5},
+                    {"item": "flintlock", "quantity": 1},
+                ],
+                "announcement": "{player} 获得 {rewards}",
+            })["config"]
+
+            self.assertEqual(saved["delay_seconds"], 45)
+            self.assertEqual(saved["backpack_slots"], 12)
+            self.assertIn("BP_Coal_Inventory_C", saved["items"][0]["item_class"])
+            reloaded = gm_module.GMConsole(root, "test").get_winning_card_reward()["config"]
+            self.assertEqual(reloaded, saved)
+
+    def test_winning_card_reward_config_rejects_invalid_values(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            console = self.make_console(Path(temp_dir))
+            valid = {
+                "enabled": True,
+                "target": "random",
+                "delay_seconds": 0,
+                "backpack_slots": 0,
+                "items": [{"item": "coal", "quantity": 1}],
+                "announcement": "奖励 {player}",
+            }
+            invalid = [
+                {**valid, "target": "all"},
+                {**valid, "delay_seconds": 601},
+                {**valid, "backpack_slots": 31},
+                {**valid, "items": [{"item": "missing", "quantity": 1}]},
+                {**valid, "items": [{"item": "coal", "quantity": 21}]},
+                {**valid, "items": [], "backpack_slots": 0},
+            ]
+            for payload in invalid:
+                with self.subTest(payload=payload), self.assertRaises(ValueError):
+                    console.save_winning_card_reward(payload)
+
 
 class GMPluginSourceTests(unittest.TestCase):
     def test_native_addresses_and_actions_are_registered(self):
@@ -298,6 +343,16 @@ class GMPluginSourceTests(unittest.TestCase):
         self.assertIn('v-model="formCoordinate.player"', source)
         self.assertIn("const formCoordinate = reactive({ player: ''", source)
         self.assertIn("params = { player: params.player", source)
+
+    def test_winning_card_reward_ui_and_plugin_are_connected(self):
+        console_source = (LINUX_SERVER_ROOT / "GM控制台" / "gm_console.py").read_text(encoding="utf-8")
+        plugin_source = (LINUX_SERVER_ROOT / "Linux 插件" / "赢牌对家开船_Linux.js").read_text(encoding="utf-8")
+        self.assertIn('name="card-reward"', console_source)
+        self.assertIn("/api/gm/winning-card-reward", console_source)
+        self.assertIn("gm_winning_card_reward.json", plugin_source)
+        self.assertIn("UDH_InventoryManager_SetStorageLimit", plugin_source)
+        self.assertIn("UDH_InventoryManager_AddInventory", plugin_source)
+        self.assertIn("var wi = getPawnInfo(winner)", plugin_source)
 
 
 class GMActionAPITests(unittest.TestCase):
@@ -327,6 +382,20 @@ class GMActionAPITests(unittest.TestCase):
                 status, catalog = request("GET", "/api/gm/items", token=token)
                 self.assertEqual(status, 200)
                 self.assertEqual(catalog["count"], len(gm_module.ITEM_CATALOG))
+
+                status, reward = request("GET", "/api/gm/winning-card-reward", token=token)
+                self.assertEqual(status, 200)
+                self.assertFalse(reward["config"]["enabled"])
+                status, reward = request(
+                    "POST", "/api/gm/winning-card-reward",
+                    {
+                        "enabled": True, "target": "random", "delay_seconds": 10,
+                        "backpack_slots": 10, "items": [{"item": "coal", "quantity": 3}],
+                        "announcement": "{player}: {rewards}",
+                    }, token,
+                )
+                self.assertEqual(status, 200)
+                self.assertEqual(reward["config"]["items"][0]["item_name"], "煤炭")
 
                 status, saved = request(
                     "POST", "/api/gm/teleport_presets/save",

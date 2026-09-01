@@ -1,4 +1,4 @@
-/* 赢牌对家开船: 摊牌后对家获得开船权并广播 (Linux 偏移) */
+/* 赢牌对家开船 + 赢牌玩家物资奖励: 奖励配置由 GM 控制台保存 (Linux 偏移) */
 var mod = Process.findModuleByName('DreadHungerServer-Linux-Shipping');
 
 if (mod !== null) {
@@ -15,6 +15,8 @@ if (mod !== null) {
     var RepeatIntervalSec = 5;
     var UseThrallChannel = false;
     var NoticePadding = 10;   // 提示后插入的空行数, 值越大提示越靠上
+    var RewardConfigFile = DH_LINUX_ROOT + '/gm_winning_card_reward.json';
+    var RewardPollMs = 1000;
     /* ================== */
 
     var FName_FName = new NativeFunction(base.add(0x2B130F0), 'void', ['pointer', 'pointer', 'int8']);
@@ -26,6 +28,11 @@ if (mod !== null) {
     var StaticFindObject = new NativeFunction(base.add(0x2C95CA0), 'pointer', ['pointer', 'pointer', 'pointer', 'int8']);
     var UClass_GetPrivateStaticClass = new NativeFunction(base.add(0x2B9C070), 'pointer', []);
     var APlayerState_GetPlayerName = new NativeFunction(base.add(0x459E030), 'void', ['pointer', 'pointer']);
+    var ADH_PlayerState_GetOwningController = new NativeFunction(base.add(0x277E4F0), 'pointer', ['pointer']);
+    var ADH_GameMode_HasMatchStarted = new NativeFunction(base.add(0x26C6160), 'uint8', ['pointer']);
+    var UDH_InventoryManager_SetStorageLimit = new NativeFunction(base.add(0x270CC90), 'void', ['pointer', 'int32']);
+    var UDH_InventoryManager_AddInventory = new NativeFunction(base.add(0x270CA50), 'void', ['pointer', 'pointer', 'pointer', 'pointer', 'pointer', 'uint8', 'pointer']);
+    var StaticLoadObject = new NativeFunction(base.add(0x2C97F00), 'pointer', ['pointer', 'pointer', 'pointer', 'pointer', 'uint32', 'pointer', 'uint8', 'pointer']);
     var ADH_RoleDealer_Showdown = base.add(0x272E980);
     var GWorld = base.add(0x5C9B6D0);
 
@@ -33,6 +40,8 @@ if (mod !== null) {
     var OFF_WinningPlayer = 0x468;
     var OFF_Pawn_Controller = 0x258;
     var OFF_Controller_PlayerState = 0x228;
+    var OFF_GameplayController_Pawn = 0x250;
+    var OFF_HumanCharacter_Inventory = 0x808;
 
     function newFName(Name) {
         var FName_Buffer = Memory.alloc(8);
@@ -70,11 +79,23 @@ if (mod !== null) {
         return TArray.add(8).readU32();
     }
 
+    function getGameMode() {
+        try {
+            var world = GWorld.readPointer();
+            if (world.isNull()) return ptr(0);
+            return world.add(0x118).readPointer();
+        } catch (e) { return ptr(0); }
+    }
+
+    function hasMatchStarted() {
+        var gameMode = getGameMode();
+        if (gameMode.isNull()) return false;
+        try { return ADH_GameMode_HasMatchStarted(gameMode) !== 0; } catch (e) { return false; }
+    }
+
     function getGameState() {
         try {
-            var World = GWorld.readPointer();
-            if (World.isNull()) return ptr(0);
-            var GameMode = World.add(0x118).readPointer();
+            var GameMode = getGameMode();
             if (GameMode.isNull()) return ptr(0);
             return GameMode.add(0x280).readPointer();
         } catch (e) { return ptr(0); }
@@ -142,6 +163,116 @@ if (mod !== null) {
                 } catch (e) {}
             }
         } catch (e) {}
+    }
+
+    function readRewardConfig() {
+        try {
+            var config = JSON.parse(File.readAllText(RewardConfigFile));
+            if (!config || config.enabled !== true) return null;
+            if (config.target !== 'winner' && config.target !== 'random') return null;
+            if (!Number.isInteger(config.delay_seconds) || config.delay_seconds < 0 || config.delay_seconds > 600) return null;
+            if (!Number.isInteger(config.backpack_slots) || config.backpack_slots < 0 || config.backpack_slots > 30) return null;
+            if (!Array.isArray(config.items) || config.items.length > 8) return null;
+            return config;
+        } catch (e) { return null; }
+    }
+
+    function getRewardPlayers() {
+        var players = [];
+        try {
+            var gameState = getGameState();
+            if (gameState.isNull()) return players;
+            var playerArray = gameState.add(0x238);
+            var count = getArraySize(playerArray);
+            var data = playerArray.readPointer();
+            if (count < 1 || count > 64 || data.isNull()) return players;
+            for (var i = 0; i < count; i++) {
+                var playerState = data.add(i * Process.pointerSize).readPointer();
+                if (playerState.isNull()) continue;
+                var controller = ADH_PlayerState_GetOwningController(playerState);
+                if (controller.isNull()) continue;
+                var pawn = controller.add(OFF_GameplayController_Pawn).readPointer();
+                if (pawn.isNull()) continue;
+                players.push({
+                    playerState: playerState,
+                    controller: controller,
+                    pawn: pawn,
+                    name: getPlayerName(playerState)
+                });
+            }
+        } catch (e) {}
+        return players;
+    }
+
+    function resolveRewardPlayer(config, winnerInfo) {
+        var players = getRewardPlayers();
+        if (players.length < 1) return null;
+        if (config.target === 'random') return players[Math.floor(Math.random() * players.length)];
+        for (var i = 0; i < players.length; i++) {
+            if (winnerInfo && players[i].playerState.equals(winnerInfo.ps)) return players[i];
+        }
+        for (var j = 0; j < players.length; j++) {
+            if (winnerInfo && players[j].name === winnerInfo.name) return players[j];
+        }
+        return null;
+    }
+
+    function loadItemClass(classPath) {
+        if (typeof classPath !== 'string' || classPath.indexOf('/Game/') !== 0) return null;
+        var buffer = Memory.alloc((classPath.length + 1) * 2);
+        buffer.writeUtf16String(classPath);
+        var uclass = UClass_GetPrivateStaticClass();
+        var itemClass = StaticFindObject(uclass, ptr('0xffffffffffffffff'), buffer, 0);
+        if (!itemClass.isNull()) return itemClass;
+        itemClass = StaticLoadObject(uclass, ptr(0), buffer, ptr(0), 0, ptr(0), 1, ptr(0));
+        return itemClass.isNull() ? null : itemClass;
+    }
+
+    function initInventoryItemState(state) {
+        state.writeU32(0xffffffff);
+        state.add(0x4).writeU8(1);
+        state.add(0x8).writeFloat(1.0);
+        state.add(0xC).writeU8(0);
+        state.add(0xD).writeU8(0);
+        state.add(0xE).writeU8(0);
+        state.add(0x10).writePointer(ptr(0));
+        state.add(0x18).writePointer(ptr(0));
+        state.add(0x20).writePointer(ptr(0));
+        state.add(0x28).writePointer(ptr(0));
+        state.add(0x30).writePointer(ptr(0));
+    }
+
+    function addRewardItem(player, item) {
+        var quantity = Number(item.quantity);
+        if (!Number.isInteger(quantity) || quantity < 1 || quantity > 20) return 0;
+        var itemClass = loadItemClass(String(item.item_class || ''));
+        if (itemClass === null) return 0;
+        var inventory = player.pawn.add(OFF_HumanCharacter_Inventory).readPointer();
+        if (inventory.isNull()) return 0;
+        var stateSize = 56;
+        var states = Memory.alloc(16 + stateSize * quantity);
+        states.writePointer(states.add(16));
+        states.add(8).writeU32(quantity);
+        states.add(12).writeU32(quantity);
+        for (var i = 0; i < quantity; i++) initInventoryItemState(states.add(16 + stateSize * i));
+        var output = Memory.alloc(8);
+        output.writeS32(0);
+        output.add(4).writeS32(-1);
+        UDH_InventoryManager_AddInventory(inventory, itemClass, states, output, output.add(4), 0, player.pawn);
+        return Math.max(0, output.readS32());
+    }
+
+    function rewardSummary(parts, backpackSlots) {
+        if (backpackSlots > 0) parts.unshift('背包 ' + backpackSlots + ' 格');
+        return parts.length > 0 ? parts.join('、') : '无可发放物资';
+    }
+
+    function broadcastReward(config, player, summary) {
+        var text = String(config.announcement || '');
+        if (!text) return;
+        text = text.split('{player}').join(player.name || '玩家');
+        text = text.split('{rewards}').join(summary);
+        broadcastToAll(FNameToFText(newFName(text)), FNameToFText(newFName(NoticeTitle)));
     }
 
     function computeOppositePairs(seats) {
@@ -250,6 +381,10 @@ if (mod !== null) {
     var SnapshotPlayers = [];
     var OpponentRetry = 0;
     var NoticePulseCount = 0;
+    var PendingRewardWinner = null;
+    var RewardMatchActive = false;
+    var RewardScheduled = false;
+    var RewardDelivered = false;
 
     Interceptor.attach(ADH_RoleDealer_Showdown, {
         onEnter: function (args) {
@@ -281,6 +416,12 @@ if (mod !== null) {
 
                 var winner = LastDealer.add(OFF_WinningPlayer).readPointer();
                 if (winner.isNull()) return;
+                var wi = getPawnInfo(winner);
+                if (wi !== null && wi.name !== '') {
+                    PendingRewardWinner = wi;
+                    RewardScheduled = false;
+                    RewardDelivered = false;
+                }
 
                 var players = SnapshotPlayers;
                 if (players.length < 2) return;
@@ -329,7 +470,6 @@ if (mod !== null) {
                 HandledShowdown = true;
 
                 LastDealer.add(OFF_WinningPlayer).writePointer(opponent);
-                var wi = getPawnInfo(winner);
                 LastWinnerInfo = wi;
 
                 setTimeout(pushOpponentNotice, OpponentDelaySec * 1000);
@@ -367,4 +507,65 @@ if (mod !== null) {
             }
         } catch (e) {}
     }
+
+    function deliverWinningReward(config, winnerInfo, retry) {
+        if (!RewardMatchActive || RewardDelivered) return;
+        var player = resolveRewardPlayer(config, winnerInfo);
+        if (player === null) {
+            if (retry < 15) setTimeout(function () { deliverWinningReward(config, winnerInfo, retry + 1); }, 1000);
+            return;
+        }
+        try {
+            var inventory = player.pawn.add(OFF_HumanCharacter_Inventory).readPointer();
+            if (inventory.isNull()) {
+                if (retry < 15) setTimeout(function () { deliverWinningReward(config, winnerInfo, retry + 1); }, 1000);
+                return;
+            }
+
+            var backpackSlots = Number(config.backpack_slots) || 0;
+            if (backpackSlots > 0) UDH_InventoryManager_SetStorageLimit(inventory, backpackSlots);
+            var parts = [];
+            for (var i = 0; i < config.items.length; i++) {
+                var added = addRewardItem(player, config.items[i]);
+                if (added > 0) parts.push(String(config.items[i].item_name || config.items[i].item) + ' x' + added);
+            }
+            if (backpackSlots < 1 && parts.length < 1) {
+                console.log('[赢牌奖励] 没有物资成功加入 ' + player.name + ' 的背包');
+                return;
+            }
+            RewardDelivered = true;
+            var summary = rewardSummary(parts, backpackSlots);
+            broadcastReward(config, player, summary);
+            ADH_PlayerController_ReceiveThrallMessage(
+                player.controller,
+                FNameToFText(newFName('[牌局奖励] 已获得：' + summary)),
+                ptr(0)
+            );
+            console.log('[赢牌奖励] 已向 ' + player.name + ' 发放：' + summary);
+        } catch (e) {
+            console.log('[赢牌奖励] 发放失败: ' + e);
+        }
+    }
+
+    function pollWinningReward() {
+        var active = hasMatchStarted();
+        if (active && !RewardMatchActive) {
+            RewardMatchActive = true;
+            if (PendingRewardWinner !== null && !RewardScheduled) {
+                var config = readRewardConfig();
+                if (config !== null) {
+                    RewardScheduled = true;
+                    var winnerInfo = PendingRewardWinner;
+                    setTimeout(function () { deliverWinningReward(config, winnerInfo, 0); }, config.delay_seconds * 1000);
+                }
+            }
+        } else if (!active && RewardMatchActive) {
+            RewardMatchActive = false;
+            RewardScheduled = false;
+            RewardDelivered = false;
+            PendingRewardWinner = null;
+        }
+    }
+
+    setInterval(pollWinningReward, RewardPollMs);
 }

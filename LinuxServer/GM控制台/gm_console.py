@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlsplit
 import threading
 
-VERSION = "1.7.2"
+VERSION = "1.8.0"
 DEFAULT_PASSWORD = "admin"
 COMMAND_FILE = "gm_commands.json"
 PLAYER_LIST_FILE = "gm_player_list.json"
@@ -27,6 +27,15 @@ MAX_COORDINATE = 10_000_000.0
 BLACKLIST_FILE = "gm_blacklist.json"
 BLACKLIST_CHECK_TOKEN_FILE = "gm_blacklist_check_token.txt"
 TELEPORT_PRESETS_FILE = "gm_teleport_presets.json"
+WINNING_CARD_REWARD_FILE = "gm_winning_card_reward.json"
+DEFAULT_WINNING_CARD_REWARD = {
+    "enabled": False,
+    "target": "winner",
+    "delay_seconds": 30,
+    "backpack_slots": 0,
+    "items": [{"item": "coal", "quantity": 5}],
+    "announcement": "[牌局奖励] {player} 获得开局奖励：{rewards}",
+}
 BLACKLIST_REASON_PRESETS = {
     "quit_after_death": "死一次退",
     "griefing": "恶意摆烂",
@@ -230,6 +239,7 @@ class GMConsole:
         self.lock = threading.Lock()
         self.blacklist_lock = threading.RLock()
         self.teleport_presets_lock = threading.RLock()
+        self.winning_card_reward_lock = threading.RLock()
         self.runtime_dir = root / GM_RUNTIME_DIR
         self.runtime_dir.mkdir(parents=True, exist_ok=True)
         self.command_path = self.runtime_dir / COMMAND_FILE
@@ -239,6 +249,7 @@ class GMConsole:
         self.blacklist_path = root / BLACKLIST_FILE
         self.blacklist_check_token_path = root / BLACKLIST_CHECK_TOKEN_FILE
         self.teleport_presets_path = root / TELEPORT_PRESETS_FILE
+        self.winning_card_reward_path = root / WINNING_CARD_REWARD_FILE
         self.game_log_path = root / "DreadHunger" / "Saved" / "Logs" / "DreadHunger.log"
         self.blacklist_check_token = self._load_or_create_blacklist_check_token()
 
@@ -277,6 +288,71 @@ class GMConsole:
             "max_quantity": 20,
             "items": [{key: entry[key] for key in fields} for entry in ITEM_CATALOG],
         }
+
+    def _normalize_winning_card_reward(self, params: dict) -> dict:
+        enabled = params.get("enabled") is True
+        target = str(params.get("target") or "").strip()
+        if target not in {"winner", "random"}:
+            raise ValueError("奖励目标只能选择赢牌玩家或随机在线玩家")
+
+        delay_seconds = params.get("delay_seconds")
+        if isinstance(delay_seconds, bool) or not isinstance(delay_seconds, int) or not 0 <= delay_seconds <= 600:
+            raise ValueError("发放时间必须是开局后 0 到 600 秒的整数")
+
+        backpack_slots = params.get("backpack_slots")
+        if isinstance(backpack_slots, bool) or not isinstance(backpack_slots, int) or not 0 <= backpack_slots <= 30:
+            raise ValueError("背包总格数必须是 0 到 30 的整数")
+
+        raw_items = params.get("items")
+        if not isinstance(raw_items, list) or len(raw_items) > 8:
+            raise ValueError("奖励物品必须是列表，最多添加 8 种")
+        items = []
+        for raw in raw_items:
+            if not isinstance(raw, dict):
+                raise ValueError("奖励物品格式无效")
+            item_id = str(raw.get("item") or "").strip()
+            entry = ITEM_BY_ID.get(item_id)
+            if entry is None:
+                raise ValueError("奖励物品无效: " + item_id)
+            quantity = raw.get("quantity")
+            if isinstance(quantity, bool) or not isinstance(quantity, int) or not 1 <= quantity <= 20:
+                raise ValueError("每种奖励物品数量必须是 1 到 20 的整数")
+            items.append({
+                "item": item_id,
+                "item_name": entry["name"],
+                "item_class": entry["class_path"],
+                "quantity": quantity,
+            })
+
+        if enabled and backpack_slots == 0 and not items:
+            raise ValueError("启用奖励时，至少设置背包格数或一种物品")
+
+        announcement = str(params.get("announcement") or "").strip()
+        if len(announcement) > 500:
+            raise ValueError("公告内容不能超过 500 个字符")
+        return {
+            "enabled": enabled,
+            "target": target,
+            "delay_seconds": delay_seconds,
+            "backpack_slots": backpack_slots,
+            "items": items,
+            "announcement": announcement,
+        }
+
+    def get_winning_card_reward(self) -> dict:
+        with self.winning_card_reward_lock:
+            data = read_json(self.winning_card_reward_path, DEFAULT_WINNING_CARD_REWARD)
+            try:
+                config = self._normalize_winning_card_reward(data if isinstance(data, dict) else {})
+            except ValueError:
+                config = self._normalize_winning_card_reward(dict(DEFAULT_WINNING_CARD_REWARD))
+            return {"ok": True, "config": config}
+
+    def save_winning_card_reward(self, params: dict) -> dict:
+        config = self._normalize_winning_card_reward(params)
+        with self.winning_card_reward_lock:
+            atomic_write_json(self.winning_card_reward_path, config)
+        return {"ok": True, "config": config, "saved_at": now_text()}
 
     def _validate_online_role(self, value: Any) -> str:
         role = str(value or "").strip()
@@ -1598,7 +1674,52 @@ def app_html() -> str:
               </el-form>
             </el-tab-pane>
 
-            <!-- Tab 8: 处决玩家 -->
+            <!-- Tab 8: 赢牌奖励 -->
+            <el-tab-pane name="card-reward">
+              <template #label>
+                <span><el-icon style="vertical-align:middle;margin-right:2px"><Trophy /></el-icon> 赢牌奖励</span>
+              </template>
+              <el-alert title="配置保存后从下一局生效，无需重启注入器。实际赢牌玩家由摊牌结果自动识别。" type="success" :closable="false" style="margin-bottom:14px" />
+              <el-form label-position="top" size="small">
+                <el-form-item label="启用奖励">
+                  <el-switch v-model="rewardConfig.enabled" active-text="启用" inactive-text="停用" />
+                </el-form-item>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px">
+                  <el-form-item label="奖励目标">
+                    <el-select v-model="rewardConfig.target" style="width:100%">
+                      <el-option label="实际赢牌玩家" value="winner" />
+                      <el-option label="随机在线玩家" value="random" />
+                    </el-select>
+                  </el-form-item>
+                  <el-form-item label="开局后发放（秒）">
+                    <el-input-number v-model="rewardConfig.delay_seconds" :min="0" :max="600" :step="1" style="width:100%" />
+                  </el-form-item>
+                  <el-form-item label="奖励后背包总格数（0=不调整）">
+                    <el-input-number v-model="rewardConfig.backpack_slots" :min="0" :max="30" :step="1" style="width:100%" />
+                  </el-form-item>
+                </div>
+                <el-form-item label="奖励物品（最多 8 种，每种 1–20 个）">
+                  <div style="width:100%;display:flex;flex-direction:column;gap:8px">
+                    <div v-for="(reward, index) in rewardConfig.items" :key="index" style="display:flex;gap:8px;align-items:center">
+                      <el-select v-model="reward.item" filterable placeholder="选择物品" style="flex:1">
+                        <el-option-group v-for="(items, category) in itemGroups" :key="category" :label="category">
+                          <el-option v-for="item in items" :key="item.id" :value="item.id" :label="item.name + (item.special ? ' ⚠' : '')" />
+                        </el-option-group>
+                      </el-select>
+                      <el-input-number v-model="reward.quantity" :min="1" :max="20" :step="1" style="width:120px" />
+                      <el-button type="danger" plain :icon="Delete" @click="removeRewardItem(index)" />
+                    </div>
+                    <el-button v-if="rewardConfig.items.length < 8" plain :icon="Box" @click="addRewardItem">添加奖励物品</el-button>
+                  </div>
+                </el-form-item>
+                <el-form-item label="全服公告（支持 {player} 和 {rewards}）">
+                  <el-input v-model="rewardConfig.announcement" type="textarea" :rows="3" maxlength="500" show-word-limit />
+                </el-form-item>
+                <el-button type="success" :icon="Check" :loading="rewardSaving" @click="saveWinningCardReward">保存赢牌奖励配置</el-button>
+              </el-form>
+            </el-tab-pane>
+
+            <!-- Tab 9: 处决玩家 -->
             <el-tab-pane name="execute">
               <template #label>
                 <span style="color:#f56c6c"><el-icon style="vertical-align:middle;margin-right:2px"><WarningFilled /></el-icon> 处决玩家</span>
@@ -1701,6 +1822,7 @@ const app = createApp({
     const isLoggingIn = ref(false);
     const isRefreshing = ref(false);
     const isSubmitting = ref(false);
+    const rewardSaving = ref(false);
 
     const activeTab = ref('thralls');
     const playerState = reactive({ count: 0, stale: false, timestamp: null });
@@ -1734,6 +1856,11 @@ const app = createApp({
     const formTeleport = reactive({ player: 'all' });
     const formCoordinate = reactive({ player: '', preset: '', presetName: '', x: 0, y: 0, z: 0 });
     const formItem = reactive({ role: '', item: '', quantity: 1 });
+    const rewardConfig = reactive({
+      enabled: false, target: 'winner', delay_seconds: 30, backpack_slots: 0,
+      items: [{ item: 'coal', quantity: 5 }],
+      announcement: '[牌局奖励] {player} 获得开局奖励：{rewards}'
+    });
     const formExecute = reactive({ role: '' });
     const formBlacklist = reactive({ player: '', reason_code: 'quit_after_death', reason: '' });
 
@@ -1776,7 +1903,7 @@ const app = createApp({
           loginPwd.value = '';
           ElMessage.success('登录成功');
           await fetchPlayers();
-          await Promise.all([fetchBlacklist(), fetchItems(), fetchTeleportPresets()]);
+          await Promise.all([fetchBlacklist(), fetchItems(), fetchTeleportPresets(), fetchWinningCardReward()]);
         } else {
           ElMessage.error(d.error || '密码错误');
         }
@@ -1838,6 +1965,54 @@ const app = createApp({
         teleportPresets.value = data.presets || [];
       } catch(e) {
         // Handled in api()
+      }
+    }
+
+    async function fetchWinningCardReward() {
+      try {
+        const data = await api('/api/gm/winning-card-reward');
+        const config = data.config || {};
+        rewardConfig.enabled = config.enabled === true;
+        rewardConfig.target = config.target || 'winner';
+        rewardConfig.delay_seconds = Number(config.delay_seconds ?? 30);
+        rewardConfig.backpack_slots = Number(config.backpack_slots ?? 0);
+        rewardConfig.items = Array.isArray(config.items)
+          ? config.items.map(entry => ({ item: entry.item, quantity: Number(entry.quantity || 1) }))
+          : [];
+        rewardConfig.announcement = config.announcement || '';
+      } catch(e) {
+        // Handled in api()
+      }
+    }
+
+    function addRewardItem() {
+      if (rewardConfig.items.length < 8) rewardConfig.items.push({ item: '', quantity: 1 });
+    }
+
+    function removeRewardItem(index) {
+      rewardConfig.items.splice(index, 1);
+    }
+
+    async function saveWinningCardReward() {
+      rewardSaving.value = true;
+      try {
+        const payload = {
+          enabled: rewardConfig.enabled === true,
+          target: rewardConfig.target,
+          delay_seconds: Number(rewardConfig.delay_seconds),
+          backpack_slots: Number(rewardConfig.backpack_slots),
+          items: rewardConfig.items.map(entry => ({ item: entry.item, quantity: Number(entry.quantity) })),
+          announcement: rewardConfig.announcement
+        };
+        await api('/api/gm/winning-card-reward', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+        });
+        await fetchWinningCardReward();
+        ElMessage.success('赢牌奖励配置已保存，将从下一局生效');
+      } catch(e) {
+        ElMessage.error('保存赢牌奖励失败: ' + e.message);
+      } finally {
+        rewardSaving.value = false;
       }
     }
 
@@ -2110,7 +2285,7 @@ const app = createApp({
 
     onMounted(async () => {
       await fetchPlayers();
-      if (isLoggedIn.value) await Promise.all([fetchBlacklist(), fetchItems(), fetchTeleportPresets()]);
+      if (isLoggedIn.value) await Promise.all([fetchBlacklist(), fetchItems(), fetchTeleportPresets(), fetchWinningCardReward()]);
       setInterval(() => {
         if (isLoggedIn.value) {
           fetchPlayers();
@@ -2119,16 +2294,17 @@ const app = createApp({
     });
 
     return {
-      isLoggedIn, loginPwd, isLoggingIn, isRefreshing, isSubmitting,
+      isLoggedIn, loginPwd, isLoggingIn, isRefreshing, isSubmitting, rewardSaving,
       activeTab, playerState, playerList, playerFilter, thrallList, explorerList, filteredPlayerList,
       rolePlayerOptions, blacklistList, blacklistPresets, blacklistCheckToken, teleportPresets, itemCatalog, itemGroups, consoleOutput, consoleRef,
-      formMsg, formEnd, formKick, formRevive, formTeleport, formCoordinate, formItem, formExecute, formBlacklist,
+      formMsg, formEnd, formKick, formRevive, formTeleport, formCoordinate, formItem, rewardConfig, formExecute, formBlacklist,
       Compass, User, UserFilled, Refresh, SwitchButton, InfoFilled, Tickets, Operation,
       ChatDotRound, Promotion, Trophy, CircleCloseFilled, Key, Unlock, RemoveFilled, Delete,
       FirstAidKit, CircleCheckFilled, LocationFilled, Position, Monitor, DocumentCopy, Check, List, View,
       Box, WarningFilled, DeleteFilled,
-      doLogin, doLogout, fetchPlayers, fetchBlacklist, fetchItems, fetchTeleportPresets, formatCoord, fillCurrentCoordinates,
+      doLogin, doLogout, fetchPlayers, fetchBlacklist, fetchItems, fetchTeleportPresets, fetchWinningCardReward, formatCoord, fillCurrentCoordinates,
       applyTeleportPreset, saveTeleportPreset, removeTeleportPreset,
+      addRewardItem, removeRewardItem, saveWinningCardReward,
       quickSelectPlayer, quickTeleportPlayer, quickRevivePlayer, quickKickPlayer, directEndGame, submitAction,
       addBlacklist, removeBlacklist, copyBlacklistToken, openBlacklistCenter, confirmEndGame, confirmExecute, copyConsoleLog
     };
@@ -2534,6 +2710,12 @@ def make_handler(console: GMConsole):
                     return
                 self.send_json(console.get_teleport_presets())
 
+            elif path == "/api/gm/winning-card-reward":
+                if not self.is_authed():
+                    self.send_json({"error": "未授权"}, 401)
+                    return
+                self.send_json(console.get_winning_card_reward())
+
             elif path == "/api/gm/blacklist":
                 if not self.is_authed():
                     self.send_json({"error": "未授权"}, 401)
@@ -2614,6 +2796,13 @@ def make_handler(console: GMConsole):
             if path == "/api/gm/teleport_presets/remove":
                 try:
                     self.send_json(console.remove_teleport_preset(self.get_params()))
+                except ValueError as exc:
+                    self.send_json({"error": str(exc)}, 400)
+                return
+
+            if path == "/api/gm/winning-card-reward":
+                try:
+                    self.send_json(console.save_winning_card_reward(self.get_params()))
                 except ValueError as exc:
                     self.send_json({"error": str(exc)}, 400)
                 return
