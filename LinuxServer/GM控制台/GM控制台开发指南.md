@@ -86,17 +86,11 @@ var gs     = gm.add(0x280).readPointer();      // AGameMode::GameState
 |---|---|---|
 | `+0x3E0` | pointer | GameState（ReadyToEndMatch_Implementation 读取） |
 
-### APlayerState 字段
-
-| 偏移 | 类型 | 说明 |
-|---|---|---|
-| `+0x224` | byte | ControllerId（GetPlayerController 参数） |
-
 ### APlayerController 字段
 
 | 偏移 | 类型 | 说明 |
 |---|---|---|
-| `+0x258` | pointer | Pawn（ACharacter*，用于传送等位置操作） |
+| `+0x250` | pointer | Pawn（Linux；ACharacter*，用于传送等位置操作） |
 
 ### ADH_Warship 字段
 
@@ -106,6 +100,8 @@ var gs     = gm.add(0x280).readPointer();      // AGameMode::GameState
 | `+0x03BC` | float | SpawnLocation.x |
 | `+0x03C0` | float | SpawnLocation.y |
 | `+0x03C4` | float | SpawnLocation.z |
+
+> `SpawnLocation` 是战舰初始生成坐标，船移动后不能用于“传送回船”。当前实现优先调用 `ADH_Warship::BP_GetSkipperLocation()`，并以 `BP_Warship` 的动态 PlayerStart 世界坐标作为备用落点。
 
 ### ADH_ArmoryDoor 字段（待精确定位）
 
@@ -126,7 +122,7 @@ var gs     = gm.add(0x280).readPointer();      // AGameMode::GameState
 | `ADH_GameMode::ReadyToEndMatch_Implementation` | `0x28c8ef0` | `bool (ptr gm)` | 检查 gs+0x514 != 0 |
 | `ADH_GameState::OnRep_WinningTeam` | `0x28d1570` | `void (ptr gs)` | 获胜队伍复制通知 |
 | `AGameMode::EndMatch` | `0x4535fc0` | `void (ptr gm)` | 直接调用客户端会崩 |
-| `AActor::K2_SetActorLocation` | `0x42a0430` | `u8 (ptr actor, ptr loc, u8 sweep, ptr hit, u8 teleport)` | 设置 Actor 位置 |
+| `AActor::K2_SetActorLocation` | `0x42a0430` | `u8 (ptr actor, FVector value, u8 sweep, ptr hit, u8 teleport)` | Linux SysV ABI 下 FVector 按值传递 |
 | `UObject::ProcessEvent` | `0x2e79900` | `void (ptr obj, ptr ufunc, ptr params)` | UE 反射调用 |
 
 ### RVA 风格函数（`base.add` 调用）
@@ -139,7 +135,12 @@ var gs     = gm.add(0x280).readPointer();      // AGameMode::GameState
 | `ReceiveThrallMsg` | `0x282B610` | `0x2a2b610` | `void (ptr ctrl, ptr msg, ptr p0)` | 简单消息 |
 | `AGameMode::Logout` | `0x43357F0` | `0x45357f0` | `void (ptr gm, ptr ctrl)` | 踢出玩家 |
 | `APlayerState::GetPlayerName` | `0x459E030` | `0x479e030` | `void (ptr ps, ptr out_fstring)` | 获取玩家名 |
-| `GetPlayerController` | `0x433C920` | `0x453c920` | `ptr (ptr ps, i32 id)` | 根据 PlayerState 获取 Controller |
+| `ADH_PlayerState::GetOwningController` | `0x277E4F0` | `0x297e4f0` | `ptr (ptr ps)` | 获取 PlayerState 的控制器 |
+| `ADH_HumanCharacter::Revive` | `0x2693900` | `0x2893900` | `void (ptr pawn)` | 解除倒地状态 |
+| `ADH_HumanCharacter::Died` | `0x269E8A0` | `0x289e8a0` | `void (ptr pawn, ptr instigator, ptr damageType, float damage)` | 执行完整死亡流程 |
+| `ADH_PlayerState::SetIsDead` | `0x277EE70` | `0x297ee70` | `void (ptr ps, u8 dead)` | 修改死亡状态 |
+| `AGameModeBase::RestartPlayer` | `0x433B4D0` | `0x453b4d0` | `void (ptr gm, ptr controller)` | 为死亡玩家重新生成 Pawn |
+| `UDH_InventoryManager::AddInventory` | `0x270CA50` | `0x290ca50` | 短参数重载 | 向背包加入物品并返回实际数量 |
 
 ---
 
@@ -222,6 +223,7 @@ ReceiveThrallMsg(controller, makeFText('[GM] 通知内容'), ptr(0));
 var RuntimeDir     = DH_LINUX_ROOT + '/.gm_runtime';
 var CommandFile    = RuntimeDir + '/gm_commands.json';
 var PlayerListFile = RuntimeDir + '/gm_player_list.json';
+var ResultDir       = RuntimeDir + '/gm_results';
 ```
 
 ### 4. 添加新功能
@@ -236,11 +238,30 @@ var ActionHandlers = {
     'kick_player':      gmKickPlayer,
     'revive_player':    gmRevivePlayer,
     'teleport_to_ship': gmTeleportToShip,
+    'give_item':        gmGiveItem,
+    'teleport_player':  gmTeleportPlayer,
+    'execute_player':   gmExecutePlayer,
     'new_action':       gmNewAction   // ← 新增
 };
 ```
 
 对应 `gm_console.py` 面板端添加 API 端点和前端表单即可。
+
+### GM HTTP API
+
+所有接口沿用 GM 登录令牌认证：
+
+| 方法 | 路径 | 请求体 / 返回值 |
+|---|---|---|
+| `GET` | `/api/gm/items` | 返回分类物品目录、风险标记和单次数量上限 |
+| `GET` | `/api/gm/teleport_presets` | 返回持久化 XYZ 预设点位 |
+| `POST` | `/api/gm/teleport_presets/save` | 新增或按同名覆盖预设点位 |
+| `POST` | `/api/gm/teleport_presets/remove` | 删除指定名称的预设点位 |
+| `POST` | `/api/gm/give_item` | `{"role":"Captain","item":"flintlock","quantity":5}` |
+| `POST` | `/api/gm/teleport_player` | `{"role":"Captain","x":100,"y":200,"z":300}` |
+| `POST` | `/api/gm/execute_player` | `{"role":"Captain"}` |
+
+`revive_player` 和 `teleport_to_ship` 同时接受新的 `role` 与旧的 `player` 参数。原生成功返回 `200`，原生失败返回 `409`，3 秒内未收到 Frida 结果返回 `202 queued`。
 
 ---
 
@@ -254,18 +275,9 @@ var ActionHandlers = {
 - **方案 B（反射）**：遍历 ArmoryDoor 对象的 UClass → Children 找 `bIsOpen` / `IsLocked` 属性的精确偏移
 - **方案 C（运行时 hook）**：hook ArmoryDoor 的 `OpenDoor` UFUNCTION，直接调用
 
-### 复活玩家（当前：只发通知，未修改 bIsDead）
-
-**改进方案**：
-
-1. `nm -C` 查 `ADH_PlayerState::execSetIsDead` 或 `bIsDead` 相关属性
-2. 找到 `bIsDead` 在 PlayerState 中的精确偏移后：`ps.add(offset).writeU8(0)`
-3. 可能还需调用重生逻辑（如 Controller 的 Respawn 函数）
-
 ### 其他可扩展功能
 
 - **修改天气 / 时间**：操控 GameState 或 GameMode 中的天气 / 时间字段
-- **给玩家发道具**：通过 `ADH_Inventory` 相关接口
 - **设置无敌 / 无限弹药**：修改 Character 属性
 - **查看详细玩家信息**：读取 PlayerState 的 HP、队伍、装备等字段
 
@@ -359,4 +371,4 @@ curl http://127.0.0.1:8800/api/state
 
 ---
 
-*文档版本：v1.0 | 基于 2026-08-20 调试验证 | 游戏二进制日期：2024-01-25*
+*文档版本：v1.1 | 2026-09-01 更新 GM 原生结果、复活、传送、物品和处决接口 | 游戏二进制日期：2024-01-25*

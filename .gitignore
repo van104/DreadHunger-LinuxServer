@@ -30,6 +30,7 @@
 /LinuxServer/.venv/
 /LinuxServer/deploy_config.json
 /LinuxServer/gm_commands.json
+/LinuxServer/gm_teleport_presets.json
 /LinuxServer/GM控制台/gm_announce.json
 /LinuxServer/GM控制台/gm_blacklist_check_token.txt
 /LinuxServer/Manifest_DebugFiles_Linux.txt

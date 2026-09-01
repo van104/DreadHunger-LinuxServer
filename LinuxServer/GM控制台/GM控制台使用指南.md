@@ -4,7 +4,7 @@
 
 | 文件 | 位置 | 用途 |
 |------|------|------|
-| `gm_console.py` | LinuxServer/ | Web 面板服务，提供浏览器操作界面 |
+| `gm_console.py` | LinuxServer/GM控制台/ | Web 面板服务，提供浏览器操作界面 |
 | `GM控制台_Linux.js` | LinuxServer/Linux 插件/ | Frida 插件，在游戏进程内执行 GM 操作 |
 
 运行时自动生成的文件：
@@ -13,8 +13,10 @@
 |------|------|
 | `.gm_runtime/gm_commands.json` | Web 面板写入的 GM 指令队列，Frida 读取后自动删除 |
 | `.gm_runtime/gm_player_list.json` | Frida 插件维护的在线玩家列表，Web 面板读取展示 |
+| `.gm_runtime/gm_results/<命令ID>.json` | 每条 GM 指令的原生执行结果；面板读取后自动删除，遗留文件 10 分钟后清理 |
 | `gm_blacklist.json` | 黑名单记录；保存姓名、完整用户 ID、Steam/EOS ID、理由和时间 |
 | `gm_blacklist_check_token.txt` | 自动生成的只读查询令牌；供快速进服器检查大厅使用 |
+| `gm_teleport_presets.json` | GM 保存的 XYZ 传送预设点位，重启后继续保留 |
 
 ---
 
@@ -26,7 +28,9 @@
 
 ```
 LinuxServer/
-├── gm_console.py                    ← 上传到这里
+├── GM控制台/
+│   ├── gm_console.py
+│   └── gm_console.sh
 ├── Linux 插件/
 │   ├── GM控制台_Linux.js            ← 上传到这里
 │   ├── 黑名单_Linux.js              (已有)
@@ -61,32 +65,32 @@ python3 frida_loader.py --root /path/to/LinuxServer
 
 ```bash
 # 基本启动（默认密码 admin，端口 9900）
-python3 gm_console.py
+python3 GM控制台/gm_console.py
 
 # 指定密码（强烈建议）
-python3 gm_console.py --password 你的密码
+python3 GM控制台/gm_console.py --password 你的密码
 
 # 完整参数
-python3 gm_console.py --root /path/to/LinuxServer --host 0.0.0.0 --port 9900 --password MySecretPass
+python3 GM控制台/gm_console.py --root /path/to/LinuxServer --host 0.0.0.0 --port 9900 --password MySecretPass
 ```
 
 启动成功输出：
 ```
-[GM控制台] Dread Hunger GM Console v1.0.0
+[GM控制台] Dread Hunger GM Console v1.7.1
 [GM控制台] 根目录: /path/to/LinuxServer
 [GM控制台] 面板: http://0.0.0.0:9900
-[GM控制台] 密码: MySecretPass
+[GM控制台] 认证: 已启用（密码不会写入日志）
 ```
 
 ### 5. 后台运行（推荐）
 
 ```bash
 # 使用 nohup
-nohup python3 gm_console.py --password 你的密码 > gm_console.log 2>&1 &
+nohup python3 GM控制台/gm_console.py --password 你的密码 > gm_console.log 2>&1 &
 
 # 或使用 screen
 screen -S gm
-python3 gm_console.py --password 你的密码
+python3 GM控制台/gm_console.py --password 你的密码
 # Ctrl+A D 分离
 # screen -r gm 恢复
 ```
@@ -122,7 +126,7 @@ python3 gm_console.py --password 你的密码
 
 #### 开启军械库
 - 直接点击"开启军械库"
-- 会打开船上的军械库门并全服通知
+- 会打开船上的军械库门，并在屏幕上方显示全服通知
 
 #### 踢出玩家
 - 从下拉框选择要踢出的玩家
@@ -132,11 +136,26 @@ python3 gm_console.py --password 你的密码
 #### 复活玩家
 - 选择要复活的玩家
 - 点击"复活"
+- 倒地玩家会解除倒地并恢复生命；完全死亡或没有 Pawn 的玩家会重新生成
+- 面板只有在死亡、倒地和生命值状态验证通过后才显示成功
 
-#### 传送回船
+#### 坐标与传送
 - 选择目标：`全部玩家` 或指定玩家
 - 点击"传送"
-- 玩家会被传送到战舰出生点上方
+- 玩家会被传送到移动后战舰的实时世界位置，不再使用开局时的静态出生坐标
+- 在线列表每秒刷新 Unreal 世界坐标（单位厘米）
+- 也可按职业填写 X/Y/Z；传送后坐标误差不超过 5 厘米才算成功
+- XYZ 可保存为命名预设；下次选择预设即可自动填入坐标，也可删除或用同名覆盖
+
+#### 实时发送物品
+- 选择在线职业或“全部在线玩家”、可搜索的物品和数量（单次每人 `1–20`）
+- 物品直接加入目标背包；背包不足会显示实际加入数量，不会扩容或在地面批量生成
+- 标有“特殊”或“需要 Mod”的条目具有额外风险；服务器未装载资源时会明确报错
+
+#### 处决玩家
+- 选择八个职业之一并确认危险操作
+- 游戏先执行完整死亡流程；死亡状态验证成功后约 1 秒将玩家踢出服务器
+- 死亡验证失败时不会继续踢出
 
 #### 黑名单管理
 - 打开“黑名单”页，从在线玩家中选择目标
@@ -195,7 +214,8 @@ ufw allow 9900/tcp
 2. **密码安全**：默认密码是 `admin`，生产环境务必修改
 3. **偏移量版本**：GM 插件中的内存偏移量与现有 Linux 插件一致。如果游戏更新导致偏移变化，需要同步更新 `GM控制台_Linux.js` 中的地址
 4. **端口冲突**：9900 端口不能被其他服务占用。管理器默认用 8800，游戏默认用 9100，不会冲突
-5. **多次执行**：指令是一次性的，Frida 读取 `.gm_runtime/gm_commands.json` 后会立即删除文件，不会重复执行
+5. **执行结果**：Web 请求最多等待 3 秒；原生成功/失败会显示真实结果，超过 3 秒显示 `queued`，不再把“已写入命令文件”当作执行成功
+6. **刷新频率**：玩家状态、坐标和 Frida 命令轮询均为约 1 秒
 
 ---
 
@@ -207,4 +227,5 @@ ufw allow 9900/tcp
 | 登录后显示空白 | 清浏览器缓存，或换浏览器试试 |
 | 在线玩家显示 0 | 检查 Frida 注入器是否正常运行；检查注入器日志有没有报错 |
 | 操作没有效果 | 查看 `frida_loader.log` 中 GM 插件的输出；确认游戏服务器正在运行 |
-| "指令已发送"但没反应 | 说明 Web 面板写入成功但 Frida 没读取，检查注入器是否正常加载了 `GM控制台_Linux.js` |
+| 指令显示“已排队” | 3 秒内没有收到结果；检查注入器是否加载 `GM控制台_Linux.js`、`.gm_runtime/gm_results` 是否可写 |
+| 指令显示原生执行失败 | 按页面返回的明确错误排查，例如玩家已离线、无 Pawn、背包已满或 Mod PAK 未装载 |

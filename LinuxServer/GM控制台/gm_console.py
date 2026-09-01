@@ -7,7 +7,7 @@ Dread Hunger Linux GM 控制台 (Vue 3 + Element Plus 暗黑科技版)
 """
 
 from __future__ import annotations
-import argparse, hashlib, hmac, html, json, os, re, secrets, sys, time, uuid
+import argparse, hashlib, hmac, html, json, math, os, re, secrets, sys, time, uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -15,13 +15,18 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlsplit
 import threading
 
-VERSION = "1.6.1"
+VERSION = "1.7.1"
 DEFAULT_PASSWORD = "admin"
 COMMAND_FILE = "gm_commands.json"
 PLAYER_LIST_FILE = "gm_player_list.json"
 GM_RUNTIME_DIR = ".gm_runtime"
+COMMAND_RESULT_DIR = "gm_results"
+COMMAND_RESULT_TIMEOUT = 3.0
+COMMAND_RESULT_MAX_AGE = 600
+MAX_COORDINATE = 10_000_000.0
 BLACKLIST_FILE = "gm_blacklist.json"
 BLACKLIST_CHECK_TOKEN_FILE = "gm_blacklist_check_token.txt"
+TELEPORT_PRESETS_FILE = "gm_teleport_presets.json"
 BLACKLIST_REASON_PRESETS = {
     "quit_after_death": "死一次退",
     "griefing": "恶意摆烂",
@@ -37,6 +42,88 @@ LOGIN_PATTERN = re.compile(
 STEAM_ID_PATTERN = re.compile(r"^\d{17}$")
 EOS_ID_PATTERN = re.compile(r"^[0-9a-fA-F]{32}$")
 FULL_USER_ID_PATTERN = re.compile(r"^(?P<steam>\d{17})_\+_\|(?P<eos>[0-9a-fA-F]{32})$")
+ROLE_NAMES = {
+    "Captain": "船长",
+    "Chaplain": "牧师",
+    "Cook": "厨子",
+    "Doctor": "医生",
+    "Engineer": "工程",
+    "Hunter": "猎人",
+    "Marine": "枪手",
+    "Navigator": "导航",
+}
+
+
+def item(item_id: str, name: str, category: str, class_path: str, *, special=False, requires_mod=False):
+    return {
+        "id": item_id,
+        "name": name,
+        "category": category,
+        "class_path": class_path,
+        "special": bool(special),
+        "requires_mod": bool(requires_mod),
+    }
+
+
+ITEM_CATALOG = [
+    item("fists", "拳头", "特殊", "/Game/Blueprints/Inventory/Fists/BP_Fists_Inventory.BP_Fists_Inventory_C", special=True),
+    item("flintlock", "燧发手枪", "远程武器", "/Game/Blueprints/Inventory/Flintlock/BP_Flintlock_Inventory.BP_Flintlock_Inventory_C"),
+    item("musket", "步枪", "远程武器", "/Game/Blueprints/Inventory/Musket/BP_Musket_Inventory.BP_Musket_Inventory_C"),
+    item("bow", "弓", "远程武器", "/Game/Blueprints/Inventory/Bow/BP_Bow_Inventory.BP_Bow_Inventory_C"),
+    item("gun_parts", "枪械零件", "远程武器", "/Game/Blueprints/Inventory/Flint/BP_GunParts_Inventory.BP_GunParts_Inventory_C"),
+    item("flintlock_ammo", "子弹", "弹药", "/Game/Blueprints/Inventory/Flintlock/BP_Flintlock_Ammo_Inventory.BP_Flintlock_Ammo_Inventory_C"),
+    item("arrows", "箭", "弹药", "/Game/Blueprints/Inventory/Bow/BP_Arrows_Inventory.BP_Arrows_Inventory_C"),
+    item("sword", "军刀", "近战武器", "/Game/Blueprints/Inventory/Sword/BP_Sword_Inventory.BP_Sword_Inventory_C"),
+    item("wood_axe", "斧头", "近战武器", "/Game/Blueprints/Inventory/WoodAxe/BP_WoodAxe_Inventory.BP_WoodAxe_Inventory_C"),
+    item("ice_axe", "冰镐", "近战武器", "/Game/Blueprints/Inventory/IceAxe/BP_IceAxe_Inventory.BP_IceAxe_Inventory_C"),
+    item("cleaver", "菜刀", "近战武器", "/Game/Blueprints/Inventory/Cleaver/BP_Cleaver_Inventory.BP_Cleaver_Inventory_C"),
+    item("shovel", "铲子", "近战武器", "/Game/Blueprints/Inventory/Shovel/BP_Shovel_Inventory.BP_Shovel_Inventory_C"),
+    item("stick", "木板", "材料", "/Game/Blueprints/Inventory/Stick/BP_Stick_Inventory.BP_Stick_Inventory_C"),
+    item("rock", "石头", "材料", "/Game/Blueprints/Inventory/Rock/BP_Rock_Inventory.BP_Rock_Inventory_C"),
+    item("iron_ingot", "废铁", "材料", "/Game/Blueprints/Inventory/Metals/BP_IronIngot_Inventory.BP_IronIngot_Inventory_C"),
+    item("nails", "钉子", "材料", "/Game/Blueprints/Inventory/Metals/BP_Nails_Inventory.BP_Nails_Inventory_C"),
+    item("lead_ingot", "铅锭", "材料", "/Game/Blueprints/Inventory/Metals/BP_LeadIngot_Inventory.BP_LeadIngot_Inventory_C"),
+    item("coal", "煤炭", "材料", "/Game/Blueprints/Inventory/Coal/BP_Coal_Inventory.BP_Coal_Inventory_C"),
+    item("gunpowder", "火药", "材料", "/Game/Blueprints/Inventory/Flintlock/BP_Gunpowder_Inventory.BP_Gunpowder_Inventory_C"),
+    item("sinew", "肌腱", "材料", "/Game/Blueprints/Inventory/AnimalParts/BP_Sinew_Inventory.BP_Sinew_Inventory_C"),
+    item("wolf_pelt", "动物皮毛", "材料", "/Game/Blueprints/Inventory/AnimalParts/BP_WolfPelt_Inventory.BP_WolfPelt_Inventory_C"),
+    item("herbs", "草药", "材料", "/Game/Blueprints/Inventory/Tea/BP_Herbs_Inventory.BP_Herbs_Inventory_C"),
+    item("syringe", "针筒", "恢复品", "/Game/Blueprints/Inventory/Syringe/BP_Syringe_Inventory.BP_Syringe_Inventory_C"),
+    item("antidote", "解毒剂", "恢复品", "/Game/Blueprints/Inventory/Poison/BP_Antidote_Inventory.BP_Antidote_Inventory_C"),
+    item("laudanum", "鸦片酊", "恢复品", "/Game/Blueprints/Inventory/Syringe/BP_Inventory_Laudanum.BP_Inventory_Laudanum_C"),
+    item("animal_meat", "兽肉", "食物", "/Game/Blueprints/Inventory/Meat/BP_AnimalMeat_Inventory.BP_AnimalMeat_Inventory_C"),
+    item("cooked_meat", "熟兽肉", "食物", "/Game/Blueprints/Inventory/Meat/BP_CookedMeat_Inventory.BP_CookedMeat_Inventory_C"),
+    item("human_meat", "人肉", "食物", "/Game/Blueprints/Inventory/Meat/BP_HumanMeat_Inventory.BP_HumanMeat_Inventory_C"),
+    item("bone_club", "骨棒", "食物", "/Game/Blueprints/Inventory/Meat/BP_BoneClub_Inventory.BP_BoneClub_Inventory_C"),
+    item("blubber", "脂肪", "食物", "/Game/Blueprints/Inventory/AnimalParts/BP_Blubber_Inventory.BP_Blubber_Inventory_C"),
+    item("stew", "炖肉", "食物", "/Game/Blueprints/Inventory/Meat/BP_Stew_Inventory.BP_Stew_Inventory_C"),
+    item("tea", "茶", "食物", "/Game/Blueprints/Inventory/Tea/BP_Tea_Inventory.BP_Tea_Inventory_C"),
+    item("whetstone", "磨刀石", "工具", "/Game/Blueprints/Inventory/Metals/BP_Whetstone_Inventory.BP_Whetstone_Inventory_C"),
+    item("bear_trap", "捕兽夹", "工具", "/Game/Blueprints/Inventory/BearTrap/BP_BearTrap_Inventory.BP_BearTrap_Inventory_C"),
+    item("spyglass", "望远镜", "工具", "/Game/Blueprints/Inventory/Spyglass/BP_Spyglass_Inventory.BP_Spyglass_Inventory_C"),
+    item("lantern", "灯笼", "工具", "/Game/Blueprints/Inventory/Lantern/BP_Lantern_Inventory.BP_Lantern_Inventory_C"),
+    item("coal_barrel", "煤炭桶", "爆炸物", "/Game/Blueprints/Inventory/Powderkeg/BP_CoalBarrel_Inventory.BP_CoalBarrel_Inventory_C"),
+    item("powderkeg", "炸药桶", "爆炸物", "/Game/Blueprints/Inventory/Powderkeg/BP_Powderkeg_Inventory.BP_Powderkeg_Inventory_C"),
+    item("poison", "毒药", "爆炸物", "/Game/Blueprints/Inventory/Poison/BP_Poison_Inventory.BP_Poison_Inventory_C"),
+    item("nitro", "硝化甘油", "爆炸物", "/Game/Blueprints/Environment/Nitro/BP_Nitro_Inventory.BP_Nitro_Inventory_C"),
+    item("skeleton_key", "万能钥匙", "钥匙与任务", "/Game/Blueprints/Inventory/LockPick/BP_SkeletonKey_Inventory.BP_SkeletonKey_Inventory_C"),
+    item("captains_key", "船长钥匙", "钥匙与任务", "/Game/Blueprints/Inventory/LockPick/BP_CaptainsKey_Inventory.BP_CaptainsKey_Inventory_C"),
+    item("armory_code", "军械库密码", "钥匙与任务", "/Game/Blueprints/Inventory/Armory/BP_Code_Inventory.BP_Code_Inventory_C", special=True),
+    item("bone_dagger", "骸骨匕首", "钥匙与任务", "/Game/Blueprints/Inventory/Totem/BP_BoneDagger_Inventory.BP_BoneDagger_Inventory_C", special=True),
+    item("quest", "任务卷轴", "钥匙与任务", "/Game/Blueprints/Inventory/Quest/BP_Quest_Inventory.BP_Quest_Inventory_C", special=True),
+    item("backpack", "背包", "特殊", "/Game/Blueprints/Inventory/Backpack/BP_Backpack_Inventory.BP_Backpack_Inventory_C", special=True),
+    item("human_body", "人类尸体", "特殊", "/Game/Blueprints/Player/BP_HumanBody_Inventory.BP_HumanBody_Inventory_C", special=True),
+    item("human_arm", "人类手臂", "特殊", "/Game/Blueprints/Player/Gore/BP_Human_Arm_Inventory.BP_Human_Arm_Inventory_C", special=True),
+    item("human_head", "人类头颅", "特殊", "/Game/Blueprints/Player/Gore/BP_Human_Head_Inventory.BP_Human_Head_Inventory_C", special=True),
+    item("human_leg", "人类腿", "特殊", "/Game/Blueprints/Player/Gore/BP_Human_Leg_Inventory.BP_Human_Leg_Inventory_C", special=True),
+    item("bear_head", "熊头", "特殊", "/Game/Blueprints/AI/Predators/Gore/BP_Bear_Head_Inventory.BP_Bear_Head_Inventory_C", special=True),
+    item("wolf_head", "狼头", "特殊", "/Game/Blueprints/AI/Predators/Gore/BP_Wolf_Head_Inventory.BP_Wolf_Head_Inventory_C", special=True),
+    item("wolf_leg", "狼腿", "特殊", "/Game/Blueprints/AI/Predators/Gore/BP_Wolf_Leg_Inventory.BP_Wolf_Leg_Inventory_C", special=True),
+    item("rabbit_head", "兔头", "特殊", "/Game/Blueprints/AI/Prey/Gore/BP_Rabbit_Head_Inventory.BP_Rabbit_Head_Inventory_C", special=True),
+    item("bone_charm", "骨符", "特殊", "/Game/Blueprints/Inventory/Totem/BP_BoneCharm_Inventory.BP_BoneCharm_Inventory_C", special=True, requires_mod=True),
+    item("pure_crystal", "纯净水晶", "特殊", "/Game/Mods/Maps/Archipelago/Blueprints/Mission/Explorer/PureCrystal/BP_PureCrystal_Inventory.BP_PureCrystal_Inventory_C", special=True, requires_mod=True),
+]
+ITEM_BY_ID = {entry["id"]: entry for entry in ITEM_CATALOG}
 
 # ── 工具 ──
 
@@ -142,12 +229,16 @@ class GMConsole:
         self.session_tokens = set()
         self.lock = threading.Lock()
         self.blacklist_lock = threading.RLock()
+        self.teleport_presets_lock = threading.RLock()
         self.runtime_dir = root / GM_RUNTIME_DIR
         self.runtime_dir.mkdir(parents=True, exist_ok=True)
         self.command_path = self.runtime_dir / COMMAND_FILE
         self.player_list_path = self.runtime_dir / PLAYER_LIST_FILE
+        self.result_dir = self.runtime_dir / COMMAND_RESULT_DIR
+        self.result_dir.mkdir(parents=True, exist_ok=True)
         self.blacklist_path = root / BLACKLIST_FILE
         self.blacklist_check_token_path = root / BLACKLIST_CHECK_TOKEN_FILE
+        self.teleport_presets_path = root / TELEPORT_PRESETS_FILE
         self.game_log_path = root / "DreadHunger" / "Saved" / "Logs" / "DreadHunger.log"
         self.blacklist_check_token = self._load_or_create_blacklist_check_token()
 
@@ -178,11 +269,130 @@ class GMConsole:
     def invalidate(self, token: str) -> None:
         self.session_tokens.discard(token)
 
+    def get_items(self) -> dict:
+        fields = ("id", "name", "category", "special", "requires_mod")
+        return {
+            "ok": True,
+            "count": len(ITEM_CATALOG),
+            "max_quantity": 20,
+            "items": [{key: entry[key] for key in fields} for entry in ITEM_CATALOG],
+        }
+
+    def _validate_online_role(self, value: Any) -> str:
+        role = str(value or "").strip()
+        if role not in ROLE_NAMES:
+            raise ValueError("职业无效")
+        players = self.get_players()
+        if players.get("stale"):
+            raise ValueError("玩家列表已过期，请确认 Frida 正常运行")
+        if not any(player.get("role_id") == role for player in players.get("players", [])):
+            raise ValueError("所选职业当前不在线")
+        return role
+
+    def _normalize_coordinates(self, params: dict) -> dict:
+        coordinates = {}
+        for key in ("x", "y", "z"):
+            value = params.get(key)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError("坐标必须是数字")
+            value = float(value)
+            if not math.isfinite(value) or abs(value) > MAX_COORDINATE:
+                raise ValueError("坐标超出安全范围")
+            coordinates[key] = value
+        return coordinates
+
+    def get_teleport_presets(self) -> dict:
+        with self.teleport_presets_lock:
+            data = read_json(self.teleport_presets_path, {"presets": []})
+            presets = data.get("presets", []) if isinstance(data, dict) else []
+            if not isinstance(presets, list):
+                presets = []
+            presets = [entry for entry in presets if isinstance(entry, dict)]
+            return {"ok": True, "count": len(presets), "presets": presets}
+
+    def save_teleport_preset(self, params: dict) -> dict:
+        name = str(params.get("name") or "").strip()
+        if not name or len(name) > 40:
+            raise ValueError("预设名称长度必须为 1 到 40 个字符")
+        coordinates = self._normalize_coordinates(params)
+        preset = {"name": name, **coordinates, "updated_at": now_text()}
+        with self.teleport_presets_lock:
+            data = self.get_teleport_presets()
+            presets = [entry for entry in data["presets"] if str(entry.get("name") or "") != name]
+            presets.append(preset)
+            atomic_write_json(self.teleport_presets_path, {"presets": presets})
+        return {"ok": True, "preset": preset}
+
+    def remove_teleport_preset(self, params: dict) -> dict:
+        name = str(params.get("name") or "").strip()
+        if not name:
+            raise ValueError("未指定预设名称")
+        with self.teleport_presets_lock:
+            data = self.get_teleport_presets()
+            presets = [entry for entry in data["presets"] if str(entry.get("name") or "") != name]
+            if len(presets) == len(data["presets"]):
+                raise ValueError("预设点位不存在")
+            atomic_write_json(self.teleport_presets_path, {"presets": presets})
+        return {"ok": True, "removed": name}
+
+    def normalize_action_params(self, action: str, params: dict) -> dict:
+        normalized = dict(params or {})
+        if action == "give_item" and str(normalized.get("role") or "").strip() == "all":
+            normalized["role"] = "all"
+        elif action in {"give_item", "teleport_player", "execute_player"}:
+            normalized["role"] = self._validate_online_role(normalized.get("role"))
+        elif action in {"revive_player", "teleport_to_ship"} and normalized.get("role"):
+            normalized["role"] = self._validate_online_role(normalized.get("role"))
+
+        if action == "give_item":
+            item_id = str(normalized.get("item") or "").strip()
+            entry = ITEM_BY_ID.get(item_id)
+            if entry is None:
+                raise ValueError("物品无效")
+            quantity = normalized.get("quantity")
+            if isinstance(quantity, bool) or not isinstance(quantity, int) or not 1 <= quantity <= 20:
+                raise ValueError("物品数量必须是 1 到 20 的整数")
+            normalized["item"] = item_id
+            normalized["item_name"] = entry["name"]
+            normalized["item_class"] = entry["class_path"]
+            normalized["quantity"] = quantity
+
+        if action == "teleport_player":
+            normalized.update(self._normalize_coordinates(normalized))
+        return normalized
+
+    def _cleanup_results(self) -> None:
+        cutoff = time.time() - COMMAND_RESULT_MAX_AGE
+        for path in self.result_dir.glob("*.json"):
+            try:
+                if path.stat().st_mtime < cutoff:
+                    path.unlink()
+            except OSError:
+                pass
+
+    def wait_for_result(self, command_id: str, timeout: float = COMMAND_RESULT_TIMEOUT) -> Optional[dict]:
+        result_path = self.result_dir / (command_id + ".json")
+        deadline = time.monotonic() + max(0.0, timeout)
+        while True:
+            result = read_json(result_path, None)
+            if isinstance(result, dict) and result.get("id") == command_id:
+                try:
+                    result_path.unlink()
+                except OSError:
+                    pass
+                return result
+            if time.monotonic() >= deadline:
+                return None
+            time.sleep(0.05)
+
     def send_command(self, action: str, params: dict) -> dict:
-        """直接覆盖写单条命令(不读旧内容), 避免与插件清空命令文件竞态导致文件损坏"""
+        """下发单条命令并短暂等待 Frida 返回真实执行结果。"""
+        params = self.normalize_action_params(action, params)
+        self._cleanup_results()
         cmd = {"id": str(uuid.uuid4()), "action": action, "params": params, "time": now_text()}
         with self.lock:
             atomic_write_json(self.command_path, {"commands": [cmd]})
+            envelope = self.wait_for_result(cmd["id"])
         action_desc = {
             "open_armory": "成功开启军械库",
             "end_game": "成功下发结束对局指令",
@@ -190,11 +400,39 @@ class GMConsole:
             "kick_player": "成功踢出玩家",
             "revive_player": "成功复活玩家",
             "teleport_to_ship": "成功传送玩家回船",
+            "give_item": "成功发送物品",
+            "teleport_player": "成功传送玩家",
+            "execute_player": "成功处决并安排踢出玩家",
         }.get(action, f"成功执行 {action}")
+        if envelope is not None:
+            result = envelope.get("result") if isinstance(envelope.get("result"), dict) else {}
+            if result.get("success") is True:
+                return {
+                    "ok": True,
+                    "success": True,
+                    "queued": False,
+                    "message": str(result.get("message") or action_desc),
+                    "command_id": cmd["id"],
+                    "action": action,
+                    "params": params,
+                    "result": result,
+                    "time": cmd["time"],
+                }
+            return {
+                "ok": False,
+                "success": False,
+                "queued": False,
+                "error": str(result.get("error") or envelope.get("error") or "Frida 执行失败"),
+                "command_id": cmd["id"],
+                "action": action,
+                "result": result,
+                "time": cmd["time"],
+            }
         return {
             "ok": True,
             "success": True,
-            "message": action_desc,
+            "queued": True,
+            "message": "指令已下发，等待 Frida 执行结果",
             "command_id": cmd["id"],
             "action": action,
             "params": params,
@@ -209,14 +447,30 @@ class GMConsole:
             chunk = obj_m.group(0)
             name_m = re.search(r'"name"\s*:\s*"([^"]*)"', chunk)
             role_m = re.search(r'"role"\s*:\s*"([^"]*)"', chunk)
+            role_id_m = re.search(r'"role_id"\s*:\s*"([^"]*)"', chunk)
             idx_m = re.search(r'"index"\s*:\s*(\d+)', chunk)
             thrall_m = re.search(r'"is_thrall"\s*:\s*(true|false)', chunk, re.IGNORECASE)
+            pawn_m = re.search(r'"has_pawn"\s*:\s*(true|false)', chunk, re.IGNORECASE)
+            dead_m = re.search(r'"is_dead"\s*:\s*(true|false)', chunk, re.IGNORECASE)
 
             name = name_m.group(1) if name_m else ""
             role = role_m.group(1) if role_m else ""
+            role_id = role_id_m.group(1) if role_id_m else ""
             idx = int(idx_m.group(1)) if idx_m else len(players)
             is_thrall = (thrall_m.group(1).lower() == "true") if thrall_m else False
-            players.append({"name": name, "role": role, "index": idx, "is_thrall": is_thrall})
+            player = {
+                "name": name,
+                "role": role,
+                "role_id": role_id,
+                "index": idx,
+                "is_thrall": is_thrall,
+                "has_pawn": (pawn_m.group(1).lower() == "true") if pawn_m else False,
+                "is_dead": (dead_m.group(1).lower() == "true") if dead_m else False,
+            }
+            for key in ("x", "y", "z"):
+                coord_m = re.search(r'"%s"\s*:\s*(-?\d+(?:\.\d+)?)' % key, chunk)
+                player[key] = float(coord_m.group(1)) if coord_m else None
+            players.append(player)
         if not players and not count_m:
             return None
         result: Dict[str, Any] = {
@@ -485,7 +739,7 @@ class GMConsole:
             result = {"count": 0, "players": []}
         try:
             mtime = self.player_list_path.stat().st_mtime
-            result["stale"] = (time.time() - mtime) > 30
+            result["stale"] = (time.time() - mtime) > 5
             result["file_mtime"] = int(mtime)
         except OSError:
             result["stale"] = True
@@ -1004,12 +1258,18 @@ def app_html() -> str:
               :class="{ 'is-thrall-row': p.is_thrall }"
               @click="quickSelectPlayer(p.name)"
             >
-              <div style="display:flex;align-items:center;gap:6px;min-width:0;flex:1">
-                <span class="player-status-dot" :class="{ 'thrall-dot': p.is_thrall }"></span>
-                <strong style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :style="{ color: p.is_thrall ? '#ff7875' : '#e2ebf3' }">{{ p.name }}</strong>
-                <el-tag size="small" type="danger" effect="dark" v-if="p.is_thrall" style="font-weight:700">🩸 狼人</el-tag>
-                <el-tag size="small" type="success" effect="plain" v-if="p.role">{{ p.role }}</el-tag>
-                <el-tag size="small" type="danger" effect="dark" v-if="p.blacklisted">黑名单</el-tag>
+              <div style="min-width:0;flex:1">
+                <div style="display:flex;align-items:center;gap:6px">
+                  <span class="player-status-dot" :class="{ 'thrall-dot': p.is_thrall }"></span>
+                  <strong style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :style="{ color: p.is_thrall ? '#ff7875' : '#e2ebf3' }">{{ p.name }}</strong>
+                  <el-tag size="small" type="danger" effect="dark" v-if="p.is_thrall" style="font-weight:700">🩸 狼人</el-tag>
+                  <el-tag size="small" type="success" effect="plain" v-if="p.role">{{ p.role }}</el-tag>
+                  <el-tag size="small" type="danger" effect="dark" v-if="p.blacklisted">黑名单</el-tag>
+                  <el-tag size="small" type="warning" effect="plain" v-if="p.is_dead">已死亡</el-tag>
+                </div>
+                <div style="font-size:11px;color:#8fa7b8;margin:4px 0 0 14px;font-family:Consolas,monospace">
+                  {{ p.has_pawn ? ('X ' + formatCoord(p.x) + ' · Y ' + formatCoord(p.y) + ' · Z ' + formatCoord(p.z)) : '暂无角色坐标' }}
+                </div>
               </div>
               <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
                 <span v-if="p.steam_id" style="font-size:11px;color:#8fa7b8">{{ p.steam_id }}</span>
@@ -1034,7 +1294,8 @@ def app_html() -> str:
           <div style="font-size:12.5px;color:#8fa7b8;line-height:1.7">
             <p>• 控制台将指令安全写入 <code>gm_commands.json</code></p>
             <p>• 服务端 <code>GM控制台_Linux.js</code> Frida 插件每秒自动轮询并无缝执行指令</p>
-            <p>• 支持向全员/单人发送即时消息、强制判胜/开库/踢人/复活/传送</p>
+            <p>• 坐标与玩家状态每秒刷新，原生动作会回传真实执行结果</p>
+            <p>• 支持消息、判胜、开库、踢人、复活、传送、发物品及处决</p>
           </div>
         </el-card>
       </el-col>
@@ -1245,7 +1506,7 @@ def app_html() -> str:
             <!-- Tab 6: 传送回船 -->
             <el-tab-pane name="teleport">
               <template #label>
-                <span><el-icon style="vertical-align:middle;margin-right:2px"><LocationFilled /></el-icon> 传送回船</span>
+                <span><el-icon style="vertical-align:middle;margin-right:2px"><LocationFilled /></el-icon> 坐标传送</span>
               </template>
               <el-form label-position="top" size="small">
                 <el-form-item label="传送目标玩家">
@@ -1255,10 +1516,87 @@ def app_html() -> str:
                   </el-select>
                 </el-form-item>
                 <el-button type="primary" :icon="Position" :loading="isSubmitting" @click="submitAction('teleport_to_ship', formTeleport)">执行传送</el-button>
+
+                <el-divider content-position="left">传送至世界坐标（厘米）</el-divider>
+                <el-form-item label="预设点位">
+                  <div style="display:flex;gap:8px;width:100%">
+                    <el-select v-model="formCoordinate.preset" clearable placeholder="选择已保存点位" style="flex:1" @change="applyTeleportPreset">
+                      <el-option v-for="preset in teleportPresets" :key="preset.name" :label="preset.name + ' · ' + formatCoord(preset.x) + ', ' + formatCoord(preset.y) + ', ' + formatCoord(preset.z)" :value="preset.name" />
+                    </el-select>
+                    <el-button type="danger" plain :disabled="!formCoordinate.preset" @click="removeTeleportPreset">删除</el-button>
+                  </div>
+                </el-form-item>
+                <el-form-item label="选择目标职业">
+                  <el-select v-model="formCoordinate.role" placeholder="选择在线职业" style="width:100%" @change="fillCurrentCoordinates">
+                    <el-option v-for="p in rolePlayerOptions" :key="p.role_id" :label="p.role + ' · ' + p.name" :value="p.role_id" :disabled="!p.has_pawn || p.is_dead" />
+                  </el-select>
+                </el-form-item>
+                <el-row :gutter="10">
+                  <el-col :span="8"><el-form-item label="X"><el-input-number v-model="formCoordinate.x" :controls="false" style="width:100%" /></el-form-item></el-col>
+                  <el-col :span="8"><el-form-item label="Y"><el-input-number v-model="formCoordinate.y" :controls="false" style="width:100%" /></el-form-item></el-col>
+                  <el-col :span="8"><el-form-item label="Z"><el-input-number v-model="formCoordinate.z" :controls="false" style="width:100%" /></el-form-item></el-col>
+                </el-row>
+                <el-form-item label="保存当前 XYZ 为预设">
+                  <div style="display:flex;gap:8px;width:100%">
+                    <el-input v-model="formCoordinate.presetName" maxlength="40" placeholder="例如：船长室、锅炉房、码头" />
+                    <el-button type="success" plain @click="saveTeleportPreset">保存点位</el-button>
+                  </div>
+                </el-form-item>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                  <el-button :icon="Refresh" @click="fillCurrentCoordinates">填入当前位置</el-button>
+                  <el-button type="warning" :icon="Position" :loading="isSubmitting" @click="submitAction('teleport_player', formCoordinate)">传送至 XYZ</el-button>
+                </div>
               </el-form>
             </el-tab-pane>
 
-            <!-- Tab 7: 黑名单管理 -->
+            <!-- Tab 7: 实时发送物品 -->
+            <el-tab-pane name="items">
+              <template #label>
+                <span><el-icon style="vertical-align:middle;margin-right:2px"><Box /></el-icon> 发送物品</span>
+              </template>
+              <el-alert title="特殊物品可能依赖 Mod PAK，未装载时会安全返回错误。" type="warning" :closable="false" style="margin-bottom:14px" />
+              <el-form label-position="top" size="small">
+                <el-form-item label="选择目标职业">
+                  <el-select v-model="formItem.role" placeholder="选择在线职业" style="width:100%">
+                    <el-option label="📦 全部在线玩家（每人发放）" value="all" />
+                    <el-option v-for="p in rolePlayerOptions" :key="p.role_id" :label="p.role + ' · ' + p.name" :value="p.role_id" :disabled="!p.has_pawn || p.is_dead" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="选择物品">
+                  <el-select v-model="formItem.item" filterable placeholder="搜索或选择物品" style="width:100%">
+                    <el-option-group v-for="(items, category) in itemGroups" :key="category" :label="category">
+                      <el-option v-for="item in items" :key="item.id" :value="item.id" :label="item.name + (item.special ? ' ⚠' : '')">
+                        <span>{{ item.name }}</span>
+                        <span v-if="item.requires_mod" style="float:right;color:#e6a23c">需要 Mod</span>
+                        <span v-else-if="item.special" style="float:right;color:#e6a23c">特殊</span>
+                      </el-option>
+                    </el-option-group>
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="数量（单次 1–20）">
+                  <el-input-number v-model="formItem.quantity" :min="1" :max="20" :step="1" />
+                </el-form-item>
+                <el-button type="success" :icon="Promotion" :loading="isSubmitting" @click="submitAction('give_item', formItem)">立即发送物品</el-button>
+              </el-form>
+            </el-tab-pane>
+
+            <!-- Tab 8: 处决玩家 -->
+            <el-tab-pane name="execute">
+              <template #label>
+                <span style="color:#f56c6c"><el-icon style="vertical-align:middle;margin-right:2px"><WarningFilled /></el-icon> 处决玩家</span>
+              </template>
+              <el-alert title="目标角色会立即死亡，并在死亡同步 1 秒后被踢出服务器。" type="error" :closable="false" style="margin-bottom:14px" />
+              <el-form label-position="top" size="small">
+                <el-form-item label="选择目标职业">
+                  <el-select v-model="formExecute.role" placeholder="选择要处决的在线职业" style="width:100%">
+                    <el-option v-for="p in rolePlayerOptions" :key="p.role_id" :label="p.role + ' · ' + p.name" :value="p.role_id" :disabled="!p.has_pawn || p.is_dead" />
+                  </el-select>
+                </el-form-item>
+                <el-button type="danger" :icon="DeleteFilled" :loading="isSubmitting" @click="confirmExecute">确认处决并踢出</el-button>
+              </el-form>
+            </el-tab-pane>
+
+            <!-- Tab 9: 黑名单管理 -->
             <el-tab-pane name="blacklist">
               <template #label>
                 <span><el-icon style="vertical-align:middle;margin-right:2px"><RemoveFilled /></el-icon> 黑名单</span>
@@ -1335,7 +1673,7 @@ const {
   Compass, User, UserFilled, Refresh, SwitchButton, InfoFilled, Tickets, Operation,
   ChatDotRound, Promotion, Trophy, CircleCloseFilled, Key, Unlock, RemoveFilled, Delete,
   FirstAidKit, CircleCheckFilled, LocationFilled, Position, Monitor, DocumentCopy, Check, List,
-  View
+  View, Box, WarningFilled, DeleteFilled
 } = ElementPlusIconsVue;
 
 const app = createApp({
@@ -1357,10 +1695,17 @@ const app = createApp({
       if (playerFilter.value === 'explorers') return explorerList.value;
       return playerList.value;
     });
+    const rolePlayerOptions = computed(() => playerList.value.filter(p => p.role_id));
 
     const blacklistList = ref([]);
     const blacklistPresets = ref({});
     const blacklistCheckToken = ref('');
+    const teleportPresets = ref([]);
+    const itemCatalog = ref([]);
+    const itemGroups = computed(() => itemCatalog.value.reduce((groups, entry) => {
+      (groups[entry.category] ||= []).push(entry);
+      return groups;
+    }, {}));
     const consoleOutput = ref('(等待指令执行...)');
     const consoleRef = ref(null);
 
@@ -1369,6 +1714,9 @@ const app = createApp({
     const formKick = reactive({ player: '', reason: '' });
     const formRevive = reactive({ player: '' });
     const formTeleport = reactive({ player: 'all' });
+    const formCoordinate = reactive({ role: '', preset: '', presetName: '', x: 0, y: 0, z: 0 });
+    const formItem = reactive({ role: '', item: '', quantity: 1 });
+    const formExecute = reactive({ role: '' });
     const formBlacklist = reactive({ player: '', reason_code: 'quit_after_death', reason: '' });
 
     async function api(url, options = {}) {
@@ -1410,7 +1758,7 @@ const app = createApp({
           loginPwd.value = '';
           ElMessage.success('登录成功');
           await fetchPlayers();
-          await fetchBlacklist();
+          await Promise.all([fetchBlacklist(), fetchItems(), fetchTeleportPresets()]);
         } else {
           ElMessage.error(d.error || '密码错误');
         }
@@ -1457,12 +1805,108 @@ const app = createApp({
       }
     }
 
+    async function fetchItems() {
+      try {
+        const data = await api('/api/gm/items');
+        itemCatalog.value = data.items || [];
+      } catch(e) {
+        // Handled in api()
+      }
+    }
+
+    async function fetchTeleportPresets() {
+      try {
+        const data = await api('/api/gm/teleport_presets');
+        teleportPresets.value = data.presets || [];
+      } catch(e) {
+        // Handled in api()
+      }
+    }
+
+    function formatCoord(value) {
+      const number = Number(value);
+      return Number.isFinite(number) ? number.toFixed(2) : '—';
+    }
+
+    function fillCurrentCoordinates() {
+      const player = playerList.value.find(p => p.role_id === formCoordinate.role);
+      if (!player || !player.has_pawn) {
+        if (formCoordinate.role) ElMessage.warning('当前职业没有可用坐标');
+        return;
+      }
+      formCoordinate.x = Number(player.x);
+      formCoordinate.y = Number(player.y);
+      formCoordinate.z = Number(player.z);
+      formCoordinate.preset = '';
+    }
+
+    function applyTeleportPreset(name) {
+      const preset = teleportPresets.value.find(entry => entry.name === name);
+      if (!preset) return;
+      formCoordinate.x = Number(preset.x);
+      formCoordinate.y = Number(preset.y);
+      formCoordinate.z = Number(preset.z);
+      formCoordinate.presetName = preset.name;
+    }
+
+    async function saveTeleportPreset() {
+      const name = formCoordinate.presetName.trim();
+      const coordinates = [formCoordinate.x, formCoordinate.y, formCoordinate.z];
+      if (!name) {
+        ElMessage.warning('请填写预设名称');
+        return;
+      }
+      if (coordinates.some(value => value === null || value === '' || !Number.isFinite(Number(value)))) {
+        ElMessage.warning('请填写有效坐标');
+        return;
+      }
+      try {
+        const data = await api('/api/gm/teleport_presets/save', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, x: Number(coordinates[0]), y: Number(coordinates[1]), z: Number(coordinates[2]) })
+        });
+        await fetchTeleportPresets();
+        formCoordinate.preset = data.preset.name;
+        ElMessage.success('预设点位已保存');
+      } catch(e) {
+        ElMessage.error('保存预设失败: ' + e.message);
+      }
+    }
+
+    async function removeTeleportPreset() {
+      if (!formCoordinate.preset) return;
+      try {
+        await ElMessageBox.confirm(`确定删除预设点位【${formCoordinate.preset}】吗？`, '删除预设', {
+          confirmButtonText: '确认删除', cancelButtonText: '取消', type: 'warning'
+        });
+      } catch(e) { return; }
+      try {
+        await api('/api/gm/teleport_presets/remove', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: formCoordinate.preset })
+        });
+        formCoordinate.preset = '';
+        formCoordinate.presetName = '';
+        await fetchTeleportPresets();
+        ElMessage.success('预设点位已删除');
+      } catch(e) {
+        ElMessage.error('删除预设失败: ' + e.message);
+      }
+    }
+
     function quickSelectPlayer(name) {
+      const player = playerList.value.find(p => p.name === name);
       formMsg.player = name;
       formKick.player = name;
       formRevive.player = name;
       formTeleport.player = name;
       formBlacklist.player = name;
+      if (player && player.role_id) {
+        formCoordinate.role = player.role_id;
+        formItem.role = player.role_id;
+        formExecute.role = player.role_id;
+        fillCurrentCoordinates();
+      }
       ElMessage.info(`已选中玩家: ${name}`);
     }
 
@@ -1568,6 +2012,25 @@ const app = createApp({
     }
 
     async function submitAction(action, params) {
+      if (action === 'give_item') {
+        if (!params.role || !params.item) {
+          ElMessage.warning('请选择在线职业和物品');
+          return;
+        }
+        if (!Number.isInteger(params.quantity) || params.quantity < 1 || params.quantity > 20) {
+          ElMessage.warning('物品数量必须是 1 到 20 的整数');
+          return;
+        }
+      }
+      if (action === 'teleport_player') {
+        const rawCoordinates = [params.x, params.y, params.z];
+        const coordinates = rawCoordinates.map(Number);
+        if (!params.role || rawCoordinates.some(value => value === null || value === '' || typeof value === 'boolean') || coordinates.some(value => !Number.isFinite(value) || Math.abs(value) > 10000000)) {
+          ElMessage.warning('请选择在线职业并填写安全范围内的有效坐标');
+          return;
+        }
+        params = { role: params.role, x: coordinates[0], y: coordinates[1], z: coordinates[2] };
+      }
       isSubmitting.value = true;
       try {
         const res = await api('/api/gm/' + action, {
@@ -1575,10 +2038,16 @@ const app = createApp({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(params)
         });
-        const logLine = `[${new Date().toLocaleTimeString()}] ✓ 指令【${action}】下发成功 (ID: ${res.command_id})\n参数: ${JSON.stringify(params)}`;
+        const state = res.queued ? '已进入队列，3 秒内尚未返回原生结果' : (res.message || '执行成功');
+        const resultLine = res.result ? `\n结果: ${JSON.stringify(res.result)}` : '';
+        const logLine = `[${new Date().toLocaleTimeString()}] ${res.queued ? '…' : '✓'} 指令【${action}】${state} (ID: ${res.command_id})\n参数: ${JSON.stringify(params)}${resultLine}`;
         consoleOutput.value = logLine + '\n\n' + consoleOutput.value;
-        ElMessage.success(`指令【${action}】已成功下发至服务器`);
+        if (res.queued) ElMessage.warning('指令已排队，原生执行结果尚未返回');
+        else ElMessage.success(state);
         if (action === 'send_message') formMsg.message = '';
+        if (['revive_player', 'teleport_to_ship', 'teleport_player', 'execute_player'].includes(action)) {
+          setTimeout(fetchPlayers, action === 'execute_player' ? 1200 : 200);
+        }
       } catch(e) {
         const logLine = `[${new Date().toLocaleTimeString()}] ✗ 指令【${action}】执行失败: ${e.message}`;
         consoleOutput.value = logLine + '\n\n' + consoleOutput.value;
@@ -1599,6 +2068,20 @@ const app = createApp({
       }).catch(() => {});
     }
 
+    function confirmExecute() {
+      if (!formExecute.role) {
+        ElMessage.warning('请选择要处决的在线职业');
+        return;
+      }
+      const player = playerList.value.find(p => p.role_id === formExecute.role);
+      const target = player ? `${player.role} · ${player.name}` : formExecute.role;
+      ElMessageBox.confirm(
+        `确定处决【${target}】吗？角色会立即死亡，验证成功后约 1 秒被踢出服务器。`,
+        '危险操作确认',
+        { confirmButtonText: '确认处决', cancelButtonText: '取消', type: 'error' }
+      ).then(() => submitAction('execute_player', { role: formExecute.role })).catch(() => {});
+    }
+
     function copyConsoleLog() {
       navigator.clipboard.writeText(consoleOutput.value).then(() => {
         ElMessage.success('控制台日志已复制');
@@ -1609,24 +2092,27 @@ const app = createApp({
 
     onMounted(async () => {
       await fetchPlayers();
-      if (isLoggedIn.value) await fetchBlacklist();
+      if (isLoggedIn.value) await Promise.all([fetchBlacklist(), fetchItems(), fetchTeleportPresets()]);
       setInterval(() => {
         if (isLoggedIn.value) {
           fetchPlayers();
         }
-      }, 2500);
+      }, 1000);
     });
 
     return {
       isLoggedIn, loginPwd, isLoggingIn, isRefreshing, isSubmitting,
       activeTab, playerState, playerList, playerFilter, thrallList, explorerList, filteredPlayerList,
-      blacklistList, blacklistPresets, blacklistCheckToken, consoleOutput, consoleRef,
-      formMsg, formEnd, formKick, formRevive, formTeleport, formBlacklist,
+      rolePlayerOptions, blacklistList, blacklistPresets, blacklistCheckToken, teleportPresets, itemCatalog, itemGroups, consoleOutput, consoleRef,
+      formMsg, formEnd, formKick, formRevive, formTeleport, formCoordinate, formItem, formExecute, formBlacklist,
       Compass, User, UserFilled, Refresh, SwitchButton, InfoFilled, Tickets, Operation,
       ChatDotRound, Promotion, Trophy, CircleCloseFilled, Key, Unlock, RemoveFilled, Delete,
       FirstAidKit, CircleCheckFilled, LocationFilled, Position, Monitor, DocumentCopy, Check, List, View,
-      doLogin, doLogout, fetchPlayers, fetchBlacklist, quickSelectPlayer, quickTeleportPlayer, quickRevivePlayer, quickKickPlayer, directEndGame, submitAction,
-      addBlacklist, removeBlacklist, copyBlacklistToken, openBlacklistCenter, confirmEndGame, copyConsoleLog
+      Box, WarningFilled, DeleteFilled,
+      doLogin, doLogout, fetchPlayers, fetchBlacklist, fetchItems, fetchTeleportPresets, formatCoord, fillCurrentCoordinates,
+      applyTeleportPreset, saveTeleportPreset, removeTeleportPreset,
+      quickSelectPlayer, quickTeleportPlayer, quickRevivePlayer, quickKickPlayer, directEndGame, submitAction,
+      addBlacklist, removeBlacklist, copyBlacklistToken, openBlacklistCenter, confirmEndGame, confirmExecute, copyConsoleLog
     };
   }
 });
@@ -2018,6 +2504,18 @@ def make_handler(console: GMConsole):
                     return
                 self.send_json(console.get_thralls())
 
+            elif path == "/api/gm/items":
+                if not self.is_authed():
+                    self.send_json({"error": "未授权"}, 401)
+                    return
+                self.send_json(console.get_items())
+
+            elif path == "/api/gm/teleport_presets":
+                if not self.is_authed():
+                    self.send_json({"error": "未授权"}, 401)
+                    return
+                self.send_json(console.get_teleport_presets())
+
             elif path == "/api/gm/blacklist":
                 if not self.is_authed():
                     self.send_json({"error": "未授权"}, 401)
@@ -2088,12 +2586,35 @@ def make_handler(console: GMConsole):
                     self.send_json({"error": str(exc)}, 400)
                 return
 
-            actions = ["send_message", "end_game", "open_armory", "kick_player", "revive_player", "teleport_to_ship"]
+            if path == "/api/gm/teleport_presets/save":
+                try:
+                    self.send_json(console.save_teleport_preset(self.get_params()))
+                except ValueError as exc:
+                    self.send_json({"error": str(exc)}, 400)
+                return
+
+            if path == "/api/gm/teleport_presets/remove":
+                try:
+                    self.send_json(console.remove_teleport_preset(self.get_params()))
+                except ValueError as exc:
+                    self.send_json({"error": str(exc)}, 400)
+                return
+
+            actions = [
+                "send_message", "end_game", "open_armory", "kick_player",
+                "revive_player", "teleport_to_ship", "give_item",
+                "teleport_player", "execute_player",
+            ]
             for action in actions:
                 if path == f"/api/gm/{action}" or path == f"/{action}":
                     params = self.get_params()
-                    result = console.send_command(action, params)
-                    self.send_json(result)
+                    try:
+                        result = console.send_command(action, params)
+                    except ValueError as exc:
+                        self.send_json({"error": str(exc)}, 400)
+                        return
+                    status = 202 if result.get("queued") else (200 if result.get("success") else 409)
+                    self.send_json(result, status)
                     return
 
             self.send_json({"error": "Not found"}, 404)
