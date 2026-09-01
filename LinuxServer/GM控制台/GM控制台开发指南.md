@@ -142,6 +142,10 @@ var gs     = gm.add(0x280).readPointer();      // AGameMode::GameState
 | `ADH_PlayerState::SetIsDead` | `0x277EE70` | `0x297ee70` | `void (ptr ps, u8 dead)` | 修改死亡状态 |
 | `AGameModeBase::RestartPlayer` | `0x433B4D0` | `0x453b4d0` | `void (ptr gm, ptr controller)` | 为死亡玩家重新生成 Pawn |
 | `UDH_InventoryManager::AddInventory` | `0x270CA50` | `0x290ca50` | 短参数重载 | 向背包加入物品并返回实际数量 |
+| `ADH_GameMode::HasMatchStarted` | `0x26C6160` | `0x28c6160` | `u8 (ptr gm)` | 验证是否已进入正式 Match |
+| `ADH_RoleDealer::EndGame` | `0x2730050` | `0x2930050` | `void (ptr dealer, u8 immediate)` | 立即结束打牌并清理牌局 |
+| `ADH_GameMode::RandomizeThralls` | `0x26CB250` | `0x28cb250` | `void (ptr gm)` | 按本局设置随机分配狼人 |
+| `AGameMode::StartMatch` | `0x4335A40` | `0x4535a40` | `void (ptr gm)` | 进入正式 Match |
 
 ---
 
@@ -202,6 +206,8 @@ Interceptor.attach(rtmImpl, {
 
 > **注意**：`SetWinningTeam` 有幂等检查（`gs+0x514 == winner` 时直接返回），但 winner=1 时 gs+0x514 默认为 0，不会触发幂等；只有同一局重复设置相同阵营时才幂等跳过。hook 强制返回 true 保证结算一定触发。
 
+打牌阶段尚未进入正式 Match，`ReadyToEndMatch` 不会被 Tick 调用。此时结束游戏必须先执行与游戏原生流程一致的过渡：`RoleDealer::EndGame(true)` → `RandomizeThralls()` → 写入赛前完成标志 `GameMode+0x488` → `AGameMode::StartMatch()`；验证 Match 已开始后再设置获胜阵营并等待自然结算。
+
 ### 2. 消息发送
 
 | 函数 | 效果 | 适用场景 |
@@ -261,6 +267,7 @@ var ActionHandlers = {
 | `POST` | `/api/gm/give_item` | `{"role":"Captain","item":"flintlock","quantity":5}` |
 | `POST` | `/api/gm/teleport_player` | `{"player":"玩家名","x":100,"y":200,"z":300}`；继续兼容旧 `role` 参数 |
 | `POST` | `/api/gm/execute_player` | `{"role":"Captain"}` |
+| `POST` | `/api/gm/skip_poker` | `{}`；结束牌局、分配狼人并直接进入正式游戏 |
 
 `revive_player` 和 `teleport_to_ship` 同时接受新的 `role` 与旧的 `player` 参数。原生成功返回 `200`，原生失败返回 `409`，3 秒内未收到 Frida 结果返回 `202 queued`。
 
@@ -372,4 +379,4 @@ curl http://127.0.0.1:8800/api/state
 
 ---
 
-*文档版本：v1.2 | 2026-09-02 修正动态战舰指针并支持按玩家坐标传送 | 游戏二进制日期：2024-01-25*
+*文档版本：v1.3 | 2026-09-02 增加大厅立即结算和跳过打牌原生流程 | 游戏二进制日期：2024-01-25*

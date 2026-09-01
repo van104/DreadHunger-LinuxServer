@@ -490,6 +490,7 @@ class GMConsole:
         action_desc = {
             "open_armory": "成功开启军械库",
             "end_game": "成功下发结束对局指令",
+            "skip_poker": "成功跳过打牌并开始游戏",
             "send_message": "成功发送消息",
             "kick_player": "成功踢出玩家",
             "revive_player": "成功复活玩家",
@@ -1504,6 +1505,7 @@ def app_html() -> str:
                   <div style="display:flex;gap:10px;flex-wrap:wrap">
                     <el-button type="success" :icon="Trophy" @click="directEndGame(1)">判定好人探险者胜利</el-button>
                     <el-button type="danger" :icon="CircleCloseFilled" @click="directEndGame(2)">判定狼人内奸胜利</el-button>
+                    <el-button type="primary" :icon="Promotion" @click="confirmSkipPoker">跳过打牌并开始游戏</el-button>
                     <el-button type="warning" :icon="Unlock" @click="submitAction('open_armory', {})">开启军械库</el-button>
                   </div>
                 </div>
@@ -1550,6 +1552,9 @@ def app_html() -> str:
                 <div>
                   <el-button type="danger" :icon="CircleCloseFilled" :loading="isSubmitting" @click="confirmEndGame">强制结束对局</el-button>
                 </div>
+                <el-divider content-position="left">打牌阶段控制</el-divider>
+                <el-alert title="跳过后由服务端立即结束牌局、随机分配狼人并进入正式游戏。" type="warning" :closable="false" style="margin-bottom:14px" />
+                <el-button type="primary" :icon="Promotion" :loading="isSubmitting" @click="confirmSkipPoker">跳过打牌并开始游戏</el-button>
               </div>
             </el-tab-pane>
 
@@ -2238,7 +2243,7 @@ const app = createApp({
         if (res.queued) ElMessage.warning('指令已排队，原生执行结果尚未返回');
         else ElMessage.success(state);
         if (action === 'send_message') formMsg.message = '';
-        if (['revive_player', 'teleport_to_ship', 'teleport_player', 'execute_player'].includes(action)) {
+        if (['revive_player', 'teleport_to_ship', 'teleport_player', 'execute_player', 'skip_poker'].includes(action)) {
           setTimeout(fetchPlayers, action === 'execute_player' ? 1200 : 200);
         }
       } catch(e) {
@@ -2259,6 +2264,14 @@ const app = createApp({
       }).then(() => {
         submitAction('end_game', { team: parseInt(formEnd.team) });
       }).catch(() => {});
+    }
+
+    function confirmSkipPoker() {
+      ElMessageBox.confirm(
+        '确定跳过当前打牌阶段吗？服务端会立即结束牌局、随机分配狼人并开始正式游戏。',
+        '跳过打牌确认',
+        { confirmButtonText: '确认跳过并开局', cancelButtonText: '取消', type: 'warning' }
+      ).then(() => submitAction('skip_poker', {})).catch(() => {});
     }
 
     function confirmExecute() {
@@ -2306,7 +2319,7 @@ const app = createApp({
       applyTeleportPreset, saveTeleportPreset, removeTeleportPreset,
       addRewardItem, removeRewardItem, saveWinningCardReward,
       quickSelectPlayer, quickTeleportPlayer, quickRevivePlayer, quickKickPlayer, directEndGame, submitAction,
-      addBlacklist, removeBlacklist, copyBlacklistToken, openBlacklistCenter, confirmEndGame, confirmExecute, copyConsoleLog
+      addBlacklist, removeBlacklist, copyBlacklistToken, openBlacklistCenter, confirmEndGame, confirmSkipPoker, confirmExecute, copyConsoleLog
     };
   }
 });
@@ -2808,7 +2821,7 @@ def make_handler(console: GMConsole):
                 return
 
             actions = [
-                "send_message", "end_game", "open_armory", "kick_player",
+                "send_message", "end_game", "skip_poker", "open_armory", "kick_player",
                 "revive_player", "teleport_to_ship", "give_item",
                 "teleport_player", "execute_player",
             ]

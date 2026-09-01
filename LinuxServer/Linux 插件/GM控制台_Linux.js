@@ -32,6 +32,10 @@ if (mod !== null) {
     var APlayerState_GetPlayerName = new NativeFunction(base.add(0x459E030), 'void', ['pointer', 'pointer']);
     var ADH_PlayerState_GetOwningController = new NativeFunction(base.add(0x277E4F0), 'pointer', ['pointer']);
     var GameModeLogout       = new NativeFunction(base.add(0x43357F0), 'void',    ['pointer', 'pointer']);
+    var ADH_GameMode_HasMatchStarted    = new NativeFunction(base.add(0x26C6160), 'uint8', ['pointer']);
+    var ADH_RoleDealer_EndGame          = new NativeFunction(base.add(0x2730050), 'void', ['pointer', 'uint8']);
+    var ADH_GameMode_RandomizeThralls   = new NativeFunction(base.add(0x26CB250), 'void', ['pointer']);
+    var AGameMode_StartMatch            = new NativeFunction(base.add(0x4335A40), 'void', ['pointer']);
     /* FVector 在 Linux SysV ABI 下按值传递，不能传 FVector 指针。 */
     var K2_SetActorLocation  = new NativeFunction(base.add(0x40A0430), 'uint8',   ['pointer', ['float', 'float', 'float'], 'uint8', 'pointer', 'uint8']);
     var ADH_Warship_BP_GetSkipperLocation = new NativeFunction(base.add(0x284FEA0), ['float', 'float', 'float'], ['pointer']);
@@ -420,24 +424,88 @@ if (mod !== null) {
         return gmSendMessage({ message: text + padding, player: 'all' });
     }
 
-    /* 结束游戏: SetWinningTeam + hook ReadyToEndMatch (走游戏自然结算, 客户端不崩溃) */
+    function hasMatchStarted(gm) {
+        try {
+            return gm && !gm.isNull() && ADH_GameMode_HasMatchStarted(gm) !== 0;
+        } catch (e) { return false; }
+    }
+
+    /* 游戏原生跳过牌局链路：结束 RoleDealer -> 分配狼人 -> 完成赛前阶段 -> StartMatch。 */
+    function forceStartMatchFromPoker() {
+        var gm = getGameMode();
+        if (!gm) return { success: false, error: '无法获取 GameMode' };
+        if (hasMatchStarted(gm)) return { success: false, error: '对局已经开始，不能再次跳过打牌' };
+
+        try {
+            var roleDealer = gm.add(0x3A8).readPointer();
+            if (roleDealer.isNull()) return { success: false, error: '当前不在可跳过的打牌阶段' };
+            var players = getOnlinePlayers();
+            if (players.length === 0) return { success: false, error: '当前没有可开始游戏的在线玩家' };
+
+            ADH_RoleDealer_EndGame(roleDealer, 1);
+            ADH_GameMode_RandomizeThralls(gm);
+
+            players = getOnlinePlayers();
+            var thrallCount = 0;
+            for (var i = 0; i < players.length; i++) {
+                if (players[i].playerState.add(0x56A).readU8() !== 0) thrallCount++;
+            }
+            if (players.length >= 2 && thrallCount === 0) {
+                return { success: false, error: '跳过牌局后未能分配狼人，已禁止进入游戏' };
+            }
+
+            /* OnFinishedDisplayingPreGameInstructions 设置此标志后调用 StartMatch。 */
+            gm.add(0x488).writeU8(1);
+            AGameMode_StartMatch(gm);
+            if (!hasMatchStarted(gm)) return { success: false, error: '原生 StartMatch 未进入正式对局' };
+            return {
+                success: true,
+                players: players.length,
+                thralls: thrallCount,
+                message: '已跳过打牌阶段并进入游戏'
+            };
+        } catch (e) {
+            return { success: false, error: '跳过打牌失败: ' + e };
+        }
+    }
+
+    function gmSkipPoker(params) {
+        var result = forceStartMatchFromPoker();
+        if (!result.success) return result;
+        gmSendTopMessage('GM 已跳过打牌阶段，游戏现在开始');
+        return result;
+    }
+
+    /* 结束游戏: 大厅阶段先完成原生开局过渡，再走自然结算，客户端不崩溃。 */
     function gmEndGame(params) {
         var gm = getGameMode();
         var gs = getGameState();
         if (!gs || !gm) return { success: false, error: '无法获取 GameState/GameMode' };
 
-        var team = params.team || 1;  /* 面板: 1=Explorers, 2=Thralls */
+        var team = Number(params.team) === 2 ? 2 : 1;  /* 面板: 1=Explorers, 2=Thralls */
         try {
+            var startedFromPoker = false;
+            var startResult = null;
+            if (!hasMatchStarted(gm)) {
+                startResult = forceStartMatchFromPoker();
+                if (!startResult.success) return startResult;
+                startedFromPoker = true;
+                gs = getGameState();
+                if (!gs) return { success: false, error: '开局过渡后无法重新获取 GameState' };
+            }
+
             /* ADH_GameState::SetWinningTeam(EPlayerTeam, EGameOverReason) @ 0x28c8920 (non-PIE 绝对地址)
              * EPlayerTeam: 1=Explorer, 2=Thrall; EGameOverReason 合法值 1/3/4 */
             var winner = team === 1 ? 1 : 2;
             var reason = team === 1 ? 1 : 3;
             var SetWinningTeam = new NativeFunction(ptr('0x28c8920'), 'void', ['pointer', 'int32', 'int32']);
             SetWinningTeam(gs, winner, reason);
+            if (gs.add(0x514).readU8() !== winner) {
+                return { success: false, error: '获胜阵营状态写入后校验失败' };
+            }
 
-            /* ADH_GameMode::ReadyToEndMatch_Implementation @ 0x28c8ef0: hook 强制返回 true
-             * 游戏 Tick 检测到 ReadyToEndMatch=true -> 自然 EndMatch -> WaitingPostMatch
-             * 完整结算(同自然结束), 客户端不会崩溃 */
+            /* 状态写入验证成功后再安装一次性 hook，避免失败路径残留结算 hook。 */
+            var done = false;
             var listener = Interceptor.attach(ptr('0x28c8ef0'), {
                 onEnter: function () {},
                 onLeave: function (retval) {
@@ -448,9 +516,20 @@ if (mod !== null) {
                     }
                 }
             });
-            var done = false;
+            setTimeout(function () {
+                if (!done) {
+                    try { listener.detach(); } catch (e) {}
+                    send({ type: 'gm_debug', error: '结束游戏等待 ReadyToEndMatch 超时' });
+                }
+            }, 5000);
 
-            return { success: true, team: team };
+            return {
+                success: true,
+                team: team,
+                started_from_poker: startedFromPoker,
+                thralls: startResult ? startResult.thralls : null,
+                message: startedFromPoker ? '已跳过打牌并进入结算流程' : '已进入结算流程'
+            };
         } catch (e) {
             return { success: false, error: '结束游戏失败: ' + e };
         }
@@ -743,6 +822,7 @@ if (mod !== null) {
     var ActionHandlers = {
         'send_message':     gmSendMessage,
         'end_game':         gmEndGame,
+        'skip_poker':       gmSkipPoker,
         'open_armory':      gmOpenArmory,
         'kick_player':      gmKickPlayer,
         'revive_player':    gmRevivePlayer,
