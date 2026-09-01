@@ -3,15 +3,15 @@
 
   功能:
   1. 开局把在线玩家传送到山顶训练点。
-  2. 保证玩家背包内有一个硝化甘油。
+  2. 在山顶出生点持续保留一个可拾取的硝化甘油。
   3. 玩家无敌，并停止饥饿与寒冷消耗。
   4. 将狼人技能充能锁定为 1 级。
-  5. 玩家离开训练点 25 米后，10 秒自动回到训练点并补充甘油。
+  5. 玩家离开训练点 25 米后，10 秒自动回到训练点。
   6. 自动清除训练点 60 米内的捕食者控制器及其 Pawn（包括附近的熊）。
   7. 对局时间固定在中午 12 点，不再进入黑夜。
   8. 灵界行走等技能在效果结束后立即清除冷却，可以连续练习。
   9. 开局把船移动到训练水域；每次复位时恢复船体与受损浮冰。
-  10. 甘油离开背包后自动补发，不必跳崖触发复位。
+  10. 刷新点的甘油被拿走或滚远后自动生成下一枚。
 
   注意:
   - 使用本插件时应停用“狼人无限技能”，否则两个插件会争用技能充能等级。
@@ -23,16 +23,18 @@ if (mod !== null) {
 
     /* ===== 训练参数 ===== */
     var TrainingPosition = { x: 4434.21, y: 6397.93, z: 7297.65 };
+    var NitroRefreshPosition = { x: 4434.21, y: 6397.93, z: 7347.65 };
     var ShipPosition = { x: 3942.55, y: 171.26, z: 99.9 };
     var FlightDistance = 2500.0;
     var ResetDelayMs = 10000;
     var IceRespawnDelayMs = 100;
+    var NitroRefreshRadius = 250.0;
     var PredatorClearRadius = 6000.0;
     var MonitorIntervalMs = 500;
     var PredatorPollMs = 2000;
     var DaytimeRefreshMs = 5000;
     var FixedTimeOfDay = 12.0;
-    var NitroClassPath = '/Game/Blueprints/Environment/Nitro/BP_Nitro_Inventory.BP_Nitro_Inventory_C';
+    var NitroPickupClassPath = '/Game/Blueprints/Environment/Nitro/BP_Nitro_Pickup.BP_Nitro_Pickup_C';
     /* ==================== */
 
     var GWorld = base.add(0x5C9B6D0);
@@ -63,16 +65,6 @@ if (mod !== null) {
         'pointer',
         ['pointer', 'pointer', 'pointer', 'pointer', 'uint32', 'pointer', 'uint8', 'pointer']
     );
-    var UDH_InventoryManager_FindInventory = new NativeFunction(
-        base.add(0x270E270),
-        'pointer',
-        ['pointer', 'pointer', 'int32']
-    );
-    var UDH_InventoryManager_AddInventory = new NativeFunction(
-        base.add(0x270CA50),
-        'void',
-        ['pointer', 'pointer', 'pointer', 'pointer', 'pointer', 'uint8', 'pointer']
-    );
     var UGameplayStatics_GetAllActorsOfClass = new NativeFunction(
         base.add(0x433F490),
         'void',
@@ -97,7 +89,6 @@ if (mod !== null) {
 
     var HungerUpdateOffset = 0xA30;
     var WarmthUpdateOffset = 0xA31;
-    var InventoryManagerOffset = 0x808;
     var RootComponentOffset = 0x130;
     var PawnOffset = 0x250;
     var WarshipOffset = 0x2B0;
@@ -119,7 +110,7 @@ if (mod !== null) {
     var MatchSequence = 0;
     var Trainees = Object.create(null);
     var ShipReady = false;
-    var NitroClass = ptr(0);
+    var NitroPickupClass = ptr(0);
     var PredatorClass = ptr(0);
     var PackIceClass = ptr(0);
     var HullBreachClass = ptr(0);
@@ -133,6 +124,10 @@ if (mod !== null) {
     PackIceActors.writePointer(ptr(0));
     PackIceActors.add(8).writeU32(0);
     PackIceActors.add(12).writeU32(0);
+    var NitroPickupActors = Memory.alloc(16);
+    NitroPickupActors.writePointer(ptr(0));
+    NitroPickupActors.add(8).writeU32(0);
+    NitroPickupActors.add(12).writeU32(0);
     var HullBreachActors = Memory.alloc(16);
     HullBreachActors.writePointer(ptr(0));
     HullBreachActors.add(8).writeU32(0);
@@ -394,59 +389,71 @@ if (mod !== null) {
         }
     }
 
-    function loadNitroClass() {
-        if (!NitroClass.isNull()) return NitroClass;
+    function loadNitroPickupClass() {
+        if (!NitroPickupClass.isNull()) return NitroPickupClass;
         try {
-            var buffer = Memory.alloc((NitroClassPath.length + 1) * 2);
-            buffer.writeUtf16String(NitroClassPath);
+            var buffer = Memory.alloc((NitroPickupClassPath.length + 1) * 2);
+            buffer.writeUtf16String(NitroPickupClassPath);
             var uclass = UClass_GetPrivateStaticClass();
-            NitroClass = StaticFindObject(uclass, ptr('0xffffffffffffffff'), buffer, 0);
-            if (NitroClass.isNull()) {
-                NitroClass = StaticLoadObject(uclass, ptr(0), buffer, ptr(0), 0, ptr(0), 1, ptr(0));
+            NitroPickupClass = StaticFindObject(uclass, ptr('0xffffffffffffffff'), buffer, 0);
+            if (NitroPickupClass.isNull()) {
+                NitroPickupClass = StaticLoadObject(uclass, ptr(0), buffer, ptr(0), 0, ptr(0), 1, ptr(0));
             }
         } catch (e) {
-            NitroClass = ptr(0);
+            NitroPickupClass = ptr(0);
         }
-        return NitroClass;
+        return NitroPickupClass;
     }
 
-    function initInventoryItemState(state) {
-        state.writeU32(0xffffffff);
-        state.add(0x4).writeU8(1);
-        state.add(0x8).writeFloat(1.0);
-        state.add(0xC).writeU8(0);
-        state.add(0xD).writeU8(0);
-        state.add(0xE).writeU8(0);
-        state.add(0x10).writePointer(ptr(0));
-        state.add(0x18).writePointer(ptr(0));
-        state.add(0x20).writePointer(ptr(0));
-        state.add(0x28).writePointer(ptr(0));
-        state.add(0x30).writePointer(ptr(0));
+    function makeSpawnTransform(position) {
+        var transform = Memory.alloc(48);
+        transform.writeFloat(0.0);
+        transform.add(0x4).writeFloat(0.0);
+        transform.add(0x8).writeFloat(0.0);
+        transform.add(0xC).writeFloat(1.0);
+        transform.add(0x10).writeFloat(position.x);
+        transform.add(0x14).writeFloat(position.y);
+        transform.add(0x18).writeFloat(position.z);
+        transform.add(0x1C).writeFloat(0.0);
+        transform.add(0x20).writeFloat(1.0);
+        transform.add(0x24).writeFloat(1.0);
+        transform.add(0x28).writeFloat(1.0);
+        transform.add(0x2C).writeFloat(0.0);
+        return transform;
     }
 
-    function ensureNitro(pawn) {
+    function hasNitroAtRefreshPoint(world, nitroClass) {
+        UGameplayStatics_GetAllActorsOfClass(world, nitroClass, NitroPickupActors);
+        var count = NitroPickupActors.add(8).readU32();
+        var data = NitroPickupActors.readPointer();
+        if (count > 256 || (count > 0 && !isReadable(data))) return true;
+        for (var i = 0; i < count; i++) {
+            var actor = data.add(i * Process.pointerSize).readPointer();
+            var location = getLocation(actor);
+            if (
+                location !== null &&
+                distanceSquared(location, NitroRefreshPosition) <= NitroRefreshRadius * NitroRefreshRadius
+            ) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function ensureNitroPickup() {
         try {
-            var nitroClass = loadNitroClass();
+            var world = getWorld();
+            if (world.isNull()) return false;
+            var nitroClass = loadNitroPickupClass();
             if (nitroClass.isNull()) return false;
-            var inventory = pawn.add(InventoryManagerOffset).readPointer();
-            if (!isReadable(inventory)) return false;
+            if (hasNitroAtRefreshPoint(world, nitroClass)) return true;
 
-            var existing = UDH_InventoryManager_FindInventory(inventory, nitroClass, -1);
-            if (!existing.isNull()) return true;
-
-            var states = Memory.alloc(72);
-            states.writePointer(states.add(16));
-            states.add(8).writeU32(1);
-            states.add(12).writeU32(1);
-            initInventoryItemState(states.add(16));
-
-            var output = Memory.alloc(8);
-            output.writeS32(0);
-            output.add(4).writeS32(-1);
-            UDH_InventoryManager_AddInventory(inventory, nitroClass, states, output, output.add(4), 0, pawn);
-            return output.readS32() > 0;
+            var params = Memory.alloc(0x30);
+            FActorSpawnParametersCtor(params);
+            var actor = UWorld_SpawnActor(world, nitroClass, makeSpawnTransform(NitroRefreshPosition), params);
+            return isReadable(actor);
         } catch (e) {
-            console.log('[山顶飞天甘油] 补充甘油失败: ' + e);
+            console.log('[山顶飞天甘油] 刷新甘油失败: ' + e);
             return false;
         }
     }
@@ -511,9 +518,9 @@ if (mod !== null) {
             record.controller = controller;
             record.pawn = pawn;
             record.teleported = true;
-            record.nitroReady = ensureNitro(pawn);
             record.resetScheduled = false;
             resetTrainingWorld();
+            ensureNitroPickup();
             notify(controller, '[训练] 已复位到山顶，可以继续练习');
         } catch (e) {
             record.resetScheduled = false;
@@ -555,6 +562,7 @@ if (mod !== null) {
 
         capturePackIce();
         if (!ShipReady) ShipReady = resetWarship();
+        ensureNitroPickup();
 
         var players = listPlayers();
         var online = Object.create(null);
@@ -569,7 +577,6 @@ if (mod !== null) {
                     controller: player.controller,
                     pawn: player.pawn,
                     teleported: false,
-                    nitroReady: false,
                     resetScheduled: false
                 };
                 Trainees[key] = record;
@@ -581,11 +588,8 @@ if (mod !== null) {
             if (!record.teleported) {
                 record.teleported = teleportToTrainingPoint(player.pawn);
                 if (record.teleported) {
-                    notify(player.controller, '[训练] 已到达山顶，背包内已准备硝化甘油');
+                    notify(player.controller, '[训练] 已到达山顶，甘油会在出生点持续刷新');
                 }
-            }
-            if (record.teleported) {
-                record.nitroReady = ensureNitro(player.pawn);
             }
 
             var location = getLocation(player.pawn);
@@ -718,5 +722,5 @@ if (mod !== null) {
     setInterval(keepDaylight, DaytimeRefreshMs);
     setTimeout(updateTrainees, 500);
     setTimeout(keepDaylight, 500);
-    send('山顶飞天甘油训练: 已加载（二阶段：船只、船损、浮冰与甘油复位）');
+    send('山顶飞天甘油训练: 已加载（二阶段：船只、船损、浮冰与甘油刷新点）');
 }

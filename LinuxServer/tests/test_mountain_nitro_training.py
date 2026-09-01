@@ -22,8 +22,8 @@ const timeCalls = [];
 const autoMoveCalls = [];
 const shipOnRepCalls = [];
 const spawnedPackIce = [];
-let nitroAdds = 0;
-let inventoryHasNitro = false;
+const spawnedNitro = [];
+let nitroPickupPresent = false;
 let nextAllocation = 0x900000;
 
 class Pointer {
@@ -84,8 +84,9 @@ const playerState = new Pointer(0x740000);
 const controller = new Pointer(0x750000);
 const pawn = new Pointer(0x760000);
 const root = new Pointer(0x770000);
-const inventory = new Pointer(0x780000);
-const nitroClass = new Pointer(0x790000);
+const nitroPickupClass = new Pointer(0x790000);
+const nitroPickupData = new Pointer(0x781000);
+let nitroPickupActor = new Pointer(0);
 const predatorClass = new Pointer(0x7A0000);
 const predatorData = new Pointer(0x7B0000);
 const nearController = new Pointer(0x7C0000);
@@ -114,7 +115,6 @@ memory.set(gameState.value + 0x240, 1);
 memory.set(playerData.value, playerState.value);
 memory.set(controller.value + 0x250, pawn.value);
 memory.set(pawn.value + 0x130, root.value);
-memory.set(pawn.value + 0x808, inventory.value);
 memory.set(root.value + 0x1D0, 0);
 memory.set(root.value + 0x1D4, 0);
 memory.set(root.value + 0x1D8, 0);
@@ -180,17 +180,9 @@ global.NativeFunction = function (address, returnType, argumentTypes) {
     case 0x2B9C070:
       return () => new Pointer(0x820000);
     case 0x2C95CA0:
-      return () => nitroClass;
+      return () => nitroPickupClass;
     case 0x2C97F00:
-      return () => nitroClass;
-    case 0x270E270:
-      return () => inventoryHasNitro ? new Pointer(0x830000) : new Pointer(0);
-    case 0x270CA50:
-      return (manager, clazz, states, added) => {
-        inventoryHasNitro = true;
-        nitroAdds++;
-        added.writeS32(1);
-      };
+      return () => nitroPickupClass;
     case 0x433F490:
       return (context, clazz, output) => {
         if (clazz.equals(predatorClass)) {
@@ -205,6 +197,11 @@ global.NativeFunction = function (address, returnType, argumentTypes) {
           output.writePointer(hullBreachData);
           output.add(8).writeU32(1);
           output.add(12).writeU32(1);
+        } else if (clazz.equals(nitroPickupClass)) {
+          output.writePointer(nitroPickupPresent ? nitroPickupData : new Pointer(0));
+          output.add(8).writeU32(nitroPickupPresent ? 1 : 0);
+          output.add(12).writeU32(nitroPickupPresent ? 1 : 0);
+          if (nitroPickupPresent) memory.set(nitroPickupData.value, nitroPickupActor.value);
         } else {
           throw new Error('unexpected actor class');
         }
@@ -220,7 +217,24 @@ global.NativeFunction = function (address, returnType, argumentTypes) {
     case 0x478C420:
       return () => {};
     case 0x43EDEE0:
-      return (context, clazz) => {
+      return (context, clazz, transform) => {
+        if (clazz.equals(nitroPickupClass)) {
+          const actor = new Pointer(0x8D0000 + spawnedNitro.length * 0x2000);
+          const actorRoot = actor.add(0x1000);
+          memory.set(actor.value + 0x10, clazz.value);
+          memory.set(actor.value + 0x130, actorRoot.value);
+          memory.set(actorRoot.value + 0x1D0, transform.add(0x10).readFloat());
+          memory.set(actorRoot.value + 0x1D4, transform.add(0x14).readFloat());
+          memory.set(actorRoot.value + 0x1D8, transform.add(0x18).readFloat());
+          nitroPickupActor = actor;
+          nitroPickupPresent = true;
+          spawnedNitro.push([
+            transform.add(0x10).readFloat(),
+            transform.add(0x14).readFloat(),
+            transform.add(0x18).readFloat()
+          ]);
+          return actor;
+        }
         const actor = new Pointer(0x89A000 + spawnedPackIce.length * 0x2000);
         const actorRoot = actor.add(0x1000);
         memory.set(actor.value + 0x10, clazz.value);
@@ -251,7 +265,10 @@ const target = playerTeleports[0].location;
 if (target[0] !== 4434.21 || target[1] !== 6397.93 || target[2] !== 7297.65) {
   throw new Error('wrong training coordinates');
 }
-if (nitroAdds !== 1 || !inventoryHasNitro) throw new Error('nitro was not added');
+if (spawnedNitro.length !== 1 || !nitroPickupPresent) throw new Error('nitro pickup was not spawned');
+if (spawnedNitro[0][0] !== 4434.21 || spawnedNitro[0][1] !== 6397.93 || spawnedNitro[0][2] !== 7347.65) {
+  throw new Error('wrong nitro refresh coordinates');
+}
 if (!tierCalls.some(call => call[0] === playerState.value && call[1] === 2)) {
   throw new Error('spell charge was not locked to tier one');
 }
@@ -312,11 +329,19 @@ if (!timeCalls.some(call => call[0] === gameState.value && call[1] === 12 && cal
 }
 
 intervals.get(500)();
-if (nitroAdds !== 1) throw new Error('an existing nitro was duplicated');
+if (spawnedNitro.length !== 1) throw new Error('an existing nitro pickup was duplicated');
 
-inventoryHasNitro = false;
+nitroPickupPresent = false;
+nitroPickupActor = new Pointer(0);
 intervals.get(500)();
-if (nitroAdds !== 2 || !inventoryHasNitro) throw new Error('dropped nitro was not automatically replaced');
+if (spawnedNitro.length !== 2 || !nitroPickupPresent) {
+  throw new Error('taken nitro pickup was not replaced at the refresh point');
+}
+
+const movedNitroRoot = nitroPickupActor.add(0x130).readPointer();
+memory.set(movedNitroRoot.value + 0x1D0, 4434.21 + 1000);
+intervals.get(500)();
+if (spawnedNitro.length !== 3) throw new Error('a distant nitro pickup blocked the refresh point');
 
 intervals.get(2000)();
 if (!destroyed.includes(nearPawn.value) || !destroyed.includes(nearController.value)) {
@@ -331,7 +356,6 @@ intervals.get(500)();
 const reset = timeouts.find(timer => timer.delay === 10000);
 if (!reset) throw new Error('flight reset was not scheduled');
 
-inventoryHasNitro = false;
 memory.set(warship.value + 0x2A0, 900);
 memory.set(packIceActor.value + 0x350, 3);
 destroyed.length = 0;
@@ -342,7 +366,7 @@ if (teleportCalls.filter(call => call.actor === pawn.value).length !== 2) {
 if (teleportCalls.filter(call => call.actor === warship.value).length !== 2) {
   throw new Error('ship was not returned after flight reset');
 }
-if (nitroAdds !== 3 || !inventoryHasNitro) throw new Error('nitro was not replenished after reset');
+if (spawnedNitro.length !== 3) throw new Error('flight reset duplicated the nitro pickup');
 if (memory.get(warship.value + 0x2A0) !== 10000 || shipOnRepCalls.length !== 2) {
   throw new Error('ship damage was not reset after flight');
 }
