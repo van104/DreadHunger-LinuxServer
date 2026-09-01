@@ -1,0 +1,11 @@
+---
+description: Commit and push completed task changes
+alwaysApply: true
+---
+
+# Push After Every Task
+
+- After completing and verifying a task that changed repository files, commit and push only the changes belonging to that task.
+- Preserve unrelated or pre-existing working-tree changes; never include them just to make the tree clean.
+- If pushing is blocked by authentication, conflicts, or remote rejection, report the exact blocker instead of claiming completion.
+- For read-only tasks or tasks that do not change repository files, do not create an empty commit.
