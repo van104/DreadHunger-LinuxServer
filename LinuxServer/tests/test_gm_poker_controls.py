@@ -10,14 +10,18 @@ CONSOLE_PATH = LINUX_SERVER_ROOT / "GM控制台" / "gm_console.py"
 class GMPokerControlSourceTests(unittest.TestCase):
     def test_skip_poker_uses_native_match_start_pipeline(self):
         source = PLUGIN_PATH.read_text(encoding="utf-8")
+        self.assertIn("base.add(0x43360E0)", source)
+        self.assertIn("base.add(0x5A1B978)", source)
         self.assertIn("base.add(0x2730050)", source)
         self.assertIn("base.add(0x26CB250)", source)
         self.assertIn("base.add(0x4335A40)", source)
         start = source.index("function forceStartMatchFromPoker")
         end = source.index("function gmSkipPoker", start)
         pipeline = source[start:end]
+        self.assertLess(pipeline.index("AGameMode_SetMatchState"), pipeline.index("ADH_RoleDealer_EndGame"))
         self.assertLess(pipeline.index("ADH_RoleDealer_EndGame"), pipeline.index("ADH_GameMode_RandomizeThralls"))
         self.assertLess(pipeline.index("ADH_GameMode_RandomizeThralls"), pipeline.index("AGameMode_StartMatch"))
+        self.assertIn("设置 PokerGame 状态失败", pipeline)
         self.assertIn("gm.add(0x488).writeU8(1)", pipeline)
         self.assertIn("hasMatchStarted(gm)", pipeline)
 

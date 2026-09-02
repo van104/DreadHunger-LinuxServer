@@ -33,9 +33,11 @@ if (mod !== null) {
     var ADH_PlayerState_GetOwningController = new NativeFunction(base.add(0x277E4F0), 'pointer', ['pointer']);
     var GameModeLogout       = new NativeFunction(base.add(0x43357F0), 'void',    ['pointer', 'pointer']);
     var ADH_GameMode_HasMatchStarted    = new NativeFunction(base.add(0x26C6160), 'uint8', ['pointer']);
+    var AGameMode_SetMatchState         = new NativeFunction(base.add(0x43360E0), 'void', ['pointer', 'uint64']);
     var ADH_RoleDealer_EndGame          = new NativeFunction(base.add(0x2730050), 'void', ['pointer', 'uint8']);
     var ADH_GameMode_RandomizeThralls   = new NativeFunction(base.add(0x26CB250), 'void', ['pointer']);
     var AGameMode_StartMatch            = new NativeFunction(base.add(0x4335A40), 'void', ['pointer']);
+    var MatchState_PokerGame            = base.add(0x5A1B978);
     /* FVector 在 Linux SysV ABI 下按值传递，不能传 FVector 指针。 */
     var K2_SetActorLocation  = new NativeFunction(base.add(0x40A0430), 'uint8',   ['pointer', ['float', 'float', 'float'], 'uint8', 'pointer', 'uint8']);
     var ADH_Warship_BP_GetSkipperLocation = new NativeFunction(base.add(0x284FEA0), ['float', 'float', 'float'], ['pointer']);
@@ -430,7 +432,7 @@ if (mod !== null) {
         } catch (e) { return false; }
     }
 
-    /* 游戏原生跳过牌局链路：结束 RoleDealer -> 分配狼人 -> 完成赛前阶段 -> StartMatch。 */
+    /* 游戏原生跳过牌局链路：进入 PokerGame -> 结束 RoleDealer -> 分配狼人 -> StartMatch。 */
     function forceStartMatchFromPoker() {
         var gm = getGameMode();
         if (!gm) return { success: false, error: '无法获取 GameMode' };
@@ -442,8 +444,27 @@ if (mod !== null) {
             var players = getOnlinePlayers();
             if (players.length === 0) return { success: false, error: '当前没有可开始游戏的在线玩家' };
 
-            ADH_RoleDealer_EndGame(roleDealer, 1);
-            ADH_GameMode_RandomizeThralls(gm);
+            var pokerState = MatchState_PokerGame.readU64();
+            try {
+                AGameMode_SetMatchState(gm, pokerState);
+                if (gm.add(0x2C0).readU64().toString() !== pokerState.toString()) {
+                    return { success: false, error: '设置 PokerGame 状态失败: 状态写入后未生效' };
+                }
+            } catch (stateError) {
+                return { success: false, error: '设置 PokerGame 状态失败: ' + stateError };
+            }
+
+            try {
+                ADH_RoleDealer_EndGame(roleDealer, 1);
+            } catch (pokerError) {
+                return { success: false, error: '结束打牌阶段失败: ' + pokerError };
+            }
+
+            try {
+                ADH_GameMode_RandomizeThralls(gm);
+            } catch (thrallError) {
+                return { success: false, error: '分配狼人失败: ' + thrallError };
+            }
 
             players = getOnlinePlayers();
             var thrallCount = 0;
@@ -456,7 +477,16 @@ if (mod !== null) {
 
             /* OnFinishedDisplayingPreGameInstructions 设置此标志后调用 StartMatch。 */
             gm.add(0x488).writeU8(1);
-            AGameMode_StartMatch(gm);
+            try {
+                AGameMode_StartMatch(gm);
+            } catch (startError) {
+                var enteredMatch = hasMatchStarted(gm);
+                return {
+                    success: false,
+                    entered_match: enteredMatch,
+                    error: '启动正式对局失败' + (enteredMatch ? '（状态已进入 InProgress，但初始化未完成）' : '') + ': ' + startError
+                };
+            }
             if (!hasMatchStarted(gm)) return { success: false, error: '原生 StartMatch 未进入正式对局' };
             return {
                 success: true,
