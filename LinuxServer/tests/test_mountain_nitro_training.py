@@ -543,6 +543,18 @@ class MountainNitroTrainingTests(unittest.TestCase):
         self.assertIn("Interceptor.attach(AGameMode_Tick", source)
         self.assertIn("gameMode.add(0x488).writeU8(1)", source)
 
+    def test_flight_reset_notifies_only_after_return_to_training_point(self):
+        source = MULTIPLAYER_PLUGIN_PATH.read_text(encoding="utf-8")
+        schedule_start = source.index("function scheduleReset")
+        schedule_end = source.index("function updateTrainees", schedule_start)
+        schedule_body = source[schedule_start:schedule_end]
+        self.assertNotIn("notify(", schedule_body)
+
+        reset_start = source.index("function resetTrainee")
+        reset_end = source.index("function scheduleReset", reset_start)
+        reset_body = source[reset_start:reset_end]
+        self.assertIn("notify(controller, '[训练] 已复位到山顶，可以继续练习')", reset_body)
+
 
 if __name__ == "__main__":
     unittest.main()

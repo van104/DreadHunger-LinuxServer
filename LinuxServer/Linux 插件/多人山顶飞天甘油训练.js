@@ -725,12 +725,7 @@ if (mod !== null) {
         record.resetScheduled = true;
         record.resetWorld = trueFlight;
         var sequence = MatchSequence;
-        notify(
-            record.controller,
-            trueFlight
-                ? '[训练] 已检测到飞离，10 秒后返回山顶'
-                : '[训练] 已离开山顶活动范围，10 秒后返回出生点'
-        );
+        /* 飞行/越界检测发生在空中时不发送消息，避免客户端移动瞬间卡顿。 */
         setTimeout(function () {
             resetTrainee(key, record, sequence);
         }, ResetDelayMs);
