@@ -5,14 +5,14 @@
   1. 开局把在线玩家传送到山顶训练点。
   2. 在山顶出生点持续保留一个可拾取的硝化甘油。
   3. 玩家无敌，并停止饥饿与寒冷消耗。
-  4. 将狼人技能充能锁定为 1 级。
-  5. 玩家离开训练点 25 米后，10 秒自动回到训练点。
+  4. 狼人只保留 1 级灵界行走，其他技能无法用于破坏训练。
+  5. 玩家离开山顶 25 米活动范围后，10 秒自动回到训练点。
   6. 自动清除训练点 60 米内的捕食者控制器及其 Pawn（包括附近的熊）。
   7. 对局时间固定在中午 12 点，不再进入黑夜。
-  8. 灵界行走等技能在效果结束后立即清除冷却，可以连续练习。
+  8. 灵界行走在效果结束后立即清除冷却，可以连续练习。
   9. 开局把船移动到训练水域；每次复位时恢复船体与受损浮冰。
   10. 刷新点的甘油被拿走或滚远后自动生成下一枚。
-  11. 每名玩家独立计时复位；所有飞出玩家返回后，才统一重置一次船和浮冰。
+  11. 每名玩家独立计时复位；只有真正飞出山顶的玩家返回后，才统一重置一次船和浮冰。
 
   注意:
   - 多人版与单人版互斥；启用本插件前必须先停用单人版。
@@ -27,7 +27,9 @@ if (mod !== null) {
     var TrainingPosition = { x: 4434.21, y: 6397.93, z: 7297.65 };
     var NitroRefreshPosition = { x: 4434.21, y: 6397.93, z: 7347.65 };
     var ShipPosition = { x: 3942.55, y: 171.26, z: 99.9 };
+    var MountainActivityRadius = 2500.0;
     var FlightDistance = 2500.0;
+    var FlightDropHeight = 500.0;
     var ResetDelayMs = 10000;
     var IceRespawnDelayMs = 100;
     var NitroRefreshRadius = 250.0;
@@ -38,12 +40,14 @@ if (mod !== null) {
     var FixedTimeOfDay = 12.0;
     var NitroPickupClassPath = '/Game/Blueprints/Environment/Nitro/BP_Nitro_Pickup.BP_Nitro_Pickup_C';
     var NitroInventoryClassPath = '/Game/Blueprints/Environment/Nitro/BP_Nitro_Inventory.BP_Nitro_Inventory_C';
+    var SpiritWalkClassPath = '/Game/Blueprints/Game/Totems/TS_SpiritWalk.TS_SpiritWalk_C';
     /* ==================== */
 
     var GWorld = base.add(0x5C9B6D0);
     var ADH_GameMode_HasMatchStarted = new NativeFunction(base.add(0x26C6160), 'uint8', ['pointer']);
     var ADH_PlayerState_GetOwningController = new NativeFunction(base.add(0x277E4F0), 'pointer', ['pointer']);
     var ADH_PlayerState_SetSpellChargeTier = new NativeFunction(base.add(0x277FAD0), 'void', ['pointer', 'int8']);
+    var ADH_SpellManager_SetEquippedSpells = new NativeFunction(base.add(0x27A75D0), 'void', ['pointer', 'pointer']);
     var ADH_GameStateBase_SetTimeOfDay = new NativeFunction(
         base.add(0x26D4120),
         'void',
@@ -105,6 +109,8 @@ if (mod !== null) {
     var ActorTransformSize = 48;
     var PickupInventoryClassOffset = 0x248;
     var PickupDropMethodOffset = 0x2F0;
+    var PlayerStateSpellManagerOffset = 0x480;
+    var EquippedSpellsOffset = 0x288;
     /* ETotemSpellTiers: 0=TST_UNDEFINED, 1=TST_ZERO, 2=TST_ONE。 */
     var SpellTierOne = 2;
     var CooldownMultiplierOffset = 0x280;
@@ -120,6 +126,7 @@ if (mod !== null) {
     var ShipReady = false;
     var NitroPickupClass = ptr(0);
     var NitroInventoryClass = ptr(0);
+    var SpiritWalkClass = ptr(0);
     var PredatorClass = ptr(0);
     var PackIceClass = ptr(0);
     var HullBreachClass = ptr(0);
@@ -141,6 +148,11 @@ if (mod !== null) {
     HullBreachActors.writePointer(ptr(0));
     HullBreachActors.add(8).writeU32(0);
     HullBreachActors.add(12).writeU32(0);
+    var SpiritWalkSpellData = Memory.alloc(Process.pointerSize);
+    var SpiritWalkOnlyArray = Memory.alloc(16);
+    SpiritWalkOnlyArray.writePointer(SpiritWalkSpellData);
+    SpiritWalkOnlyArray.add(8).writeU32(1);
+    SpiritWalkOnlyArray.add(12).writeU32(1);
 
     function isReadable(address) {
         try {
@@ -233,6 +245,22 @@ if (mod !== null) {
         var dy = location.y - target.y;
         var dz = location.z - target.z;
         return dx * dx + dy * dy + dz * dz;
+    }
+
+    function horizontalDistanceSquared(location, target) {
+        var dx = location.x - target.x;
+        var dy = location.y - target.y;
+        return dx * dx + dy * dy;
+    }
+
+    function isOutsideMountainActivity(location) {
+        return horizontalDistanceSquared(location, TrainingPosition) >
+            MountainActivityRadius * MountainActivityRadius;
+    }
+
+    function isTrueFlight(location) {
+        return location.z < TrainingPosition.z - FlightDropHeight &&
+            distanceSquared(location, TrainingPosition) > FlightDistance * FlightDistance;
     }
 
     function teleportToTrainingPoint(pawn) {
@@ -384,9 +412,9 @@ if (mod !== null) {
         var keys = Object.keys(Trainees);
         for (var i = 0; i < keys.length; i++) {
             var record = Trainees[keys[i]];
-            if (!record.teleported || record.resetScheduled) return;
+            if (!record.teleported || (record.resetScheduled && record.resetWorld)) return;
             var location = getLocation(record.pawn);
-            if (location === null || distanceSquared(location, TrainingPosition) > FlightDistance * FlightDistance) return;
+            if (location === null || isTrueFlight(location)) return;
         }
         WorldResetPending = false;
         resetTrainingWorld();
@@ -408,6 +436,50 @@ if (mod !== null) {
             if (isReadable(playerState)) ADH_PlayerState_SetSpellChargeTier(playerState, SpellTierOne);
         } catch (e) {
             console.log('[山顶飞天甘油] 锁定一级技能失败: ' + e);
+        }
+    }
+
+    function loadSpiritWalkClass() {
+        if (!SpiritWalkClass.isNull()) return SpiritWalkClass;
+        try {
+            var buffer = Memory.alloc((SpiritWalkClassPath.length + 1) * 2);
+            buffer.writeUtf16String(SpiritWalkClassPath);
+            var uclass = UClass_GetPrivateStaticClass();
+            SpiritWalkClass = StaticFindObject(uclass, ptr('0xffffffffffffffff'), buffer, 0);
+            if (SpiritWalkClass.isNull()) {
+                SpiritWalkClass = StaticLoadObject(uclass, ptr(0), buffer, ptr(0), 0, ptr(0), 1, ptr(0));
+            }
+        } catch (e) {
+            SpiritWalkClass = ptr(0);
+        }
+        return SpiritWalkClass;
+    }
+
+    function lockSpiritWalkOnly(playerState) {
+        try {
+            if (!isReadable(playerState)) return false;
+            var spellManager = playerState.add(PlayerStateSpellManagerOffset).readPointer();
+            if (!isReadable(spellManager)) return false;
+            var spellClass = loadSpiritWalkClass();
+            if (spellClass.isNull()) return false;
+
+            var equippedSpells = spellManager.add(EquippedSpellsOffset);
+            var equippedData = equippedSpells.readPointer();
+            var equippedCount = equippedSpells.add(8).readU32();
+            if (
+                equippedCount === 1 &&
+                isReadable(equippedData) &&
+                equippedData.readPointer().equals(spellClass)
+            ) {
+                return true;
+            }
+
+            SpiritWalkSpellData.writePointer(spellClass);
+            ADH_SpellManager_SetEquippedSpells(spellManager, SpiritWalkOnlyArray);
+            return true;
+        } catch (e) {
+            console.log('[山顶飞天甘油] 锁定灵界行走失败: ' + e);
+            return false;
         }
     }
 
@@ -553,16 +625,19 @@ if (mod !== null) {
 
             applyProtection(pawn);
             lockLevelOne(record.playerState);
+            lockSpiritWalkOnly(record.playerState);
             if (!teleportToTrainingPoint(pawn)) {
                 record.resetScheduled = false;
                 return;
             }
 
+            var resetWorld = record.resetWorld;
             record.controller = controller;
             record.pawn = pawn;
             record.teleported = true;
             record.resetScheduled = false;
-            WorldResetPending = true;
+            record.resetWorld = false;
+            if (resetWorld) WorldResetPending = true;
             ensureNitroPickup();
             notify(controller, '[训练] 已复位到山顶，可以继续练习');
             tryResetTrainingWorld();
@@ -572,11 +647,20 @@ if (mod !== null) {
         }
     }
 
-    function scheduleReset(key, record) {
-        if (record.resetScheduled) return;
+    function scheduleReset(key, record, trueFlight) {
+        if (record.resetScheduled) {
+            if (trueFlight) record.resetWorld = true;
+            return;
+        }
         record.resetScheduled = true;
+        record.resetWorld = trueFlight;
         var sequence = MatchSequence;
-        notify(record.controller, '[训练] 已检测到飞离，10 秒后返回山顶');
+        notify(
+            record.controller,
+            trueFlight
+                ? '[训练] 已检测到飞离，10 秒后返回山顶'
+                : '[训练] 已离开山顶活动范围，10 秒后返回出生点'
+        );
         setTimeout(function () {
             resetTrainee(key, record, sequence);
         }, ResetDelayMs);
@@ -623,29 +707,30 @@ if (mod !== null) {
                     controller: player.controller,
                     pawn: player.pawn,
                     teleported: false,
-                    resetScheduled: false
+                    resetScheduled: false,
+                    resetWorld: false
                 };
                 Trainees[key] = record;
             }
 
             applyProtection(player.pawn);
             lockLevelOne(player.playerState);
+            lockSpiritWalkOnly(player.playerState);
 
             if (!record.teleported) {
                 record.teleported = teleportToTrainingPoint(player.pawn);
                 if (record.teleported) {
-                    notify(player.controller, '[训练] 已到达山顶，甘油会在出生点持续刷新');
+                    notify(player.controller, '[训练] 已到达山顶；活动范围 25 米，仅可使用 1 级灵界行走');
                 }
             }
 
             var location = getLocation(player.pawn);
-            if (
-                record.teleported &&
-                !record.resetScheduled &&
-                location !== null &&
-                distanceSquared(location, TrainingPosition) > FlightDistance * FlightDistance
-            ) {
-                scheduleReset(key, record);
+            if (record.teleported && location !== null) {
+                if (isTrueFlight(location)) {
+                    scheduleReset(key, record, true);
+                } else if (!record.resetScheduled && isOutsideMountainActivity(location)) {
+                    scheduleReset(key, record, false);
+                }
             }
         }
 
@@ -769,5 +854,5 @@ if (mod !== null) {
     setInterval(keepDaylight, DaytimeRefreshMs);
     setTimeout(updateTrainees, 500);
     setTimeout(keepDaylight, 500);
-    send('多人山顶飞天甘油训练: 已加载（玩家独立复位，共享地图统一重置）');
+    send('多人山顶飞天甘油训练: 已加载（仅灵界行走，山顶活动范围 25 米）');
 }

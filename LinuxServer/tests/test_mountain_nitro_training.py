@@ -17,6 +17,7 @@ const hooks = new Map();
 const intervals = new Map();
 const timeouts = [];
 const tierCalls = [];
+const equippedSpellCalls = [];
 const damageCalls = [];
 const teleportCalls = [];
 const destroyed = [];
@@ -85,15 +86,21 @@ const gameMode = new Pointer(0x710000);
 const gameState = new Pointer(0x720000);
 const playerData = new Pointer(0x730000);
 const playerState = new Pointer(0x740000);
+const playerSpellManager = new Pointer(0x745000);
+const playerEquippedData = new Pointer(0x746000);
 const controller = new Pointer(0x750000);
 const pawn = new Pointer(0x760000);
 const root = new Pointer(0x770000);
 const playerState2 = new Pointer(0x7A1000);
+const playerSpellManager2 = new Pointer(0x7A1800);
+const playerEquippedData2 = new Pointer(0x7A1900);
 const controller2 = new Pointer(0x7A2000);
 const pawn2 = new Pointer(0x7A3000);
 const root2 = new Pointer(0x7A4000);
 const nitroPickupClass = new Pointer(0x790000);
 const nitroInventoryClass = new Pointer(0x782000);
+const spiritWalkClass = new Pointer(0x783000);
+const destructiveSpellClass = new Pointer(0x784000);
 const nitroPickupData = new Pointer(0x781000);
 let nitroPickupActor = new Pointer(0);
 const predatorClass = new Pointer(0x7A0000);
@@ -125,6 +132,16 @@ memory.set(gameState.value + 0x238, playerData.value);
 memory.set(gameState.value + 0x240, multiplayer ? 2 : 1);
 memory.set(playerData.value, playerState.value);
 if (multiplayer) memory.set(playerData.value + 8, playerState2.value);
+memory.set(playerState.value + 0x480, playerSpellManager.value);
+memory.set(playerSpellManager.value + 0x288, playerEquippedData.value);
+memory.set(playerSpellManager.value + 0x290, 2);
+memory.set(playerEquippedData.value, destructiveSpellClass.value);
+memory.set(playerEquippedData.value + 8, destructiveSpellClass.value);
+memory.set(playerState2.value + 0x480, playerSpellManager2.value);
+memory.set(playerSpellManager2.value + 0x288, playerEquippedData2.value);
+memory.set(playerSpellManager2.value + 0x290, 2);
+memory.set(playerEquippedData2.value, destructiveSpellClass.value);
+memory.set(playerEquippedData2.value + 8, destructiveSpellClass.value);
 memory.set(controller.value + 0x250, pawn.value);
 memory.set(pawn.value + 0x130, root.value);
 memory.set(root.value + 0x1D0, 0);
@@ -174,6 +191,16 @@ global.NativeFunction = function (address, returnType, argumentTypes) {
       return ps => ps.equals(playerState) ? controller : (ps.equals(playerState2) ? controller2 : new Pointer(0));
     case 0x277FAD0:
       return (ps, tier) => tierCalls.push([ps.value, tier]);
+    case 0x27A75D0:
+      return (manager, spells) => {
+        const data = spells.readPointer();
+        const count = spells.add(8).readU32();
+        equippedSpellCalls.push([manager.value, count, data.readPointer().value]);
+        const equipped = manager.add(0x288);
+        equipped.writePointer(data);
+        equipped.add(8).writeU32(count);
+        equipped.add(12).writeU32(count);
+      };
     case 0x26D4120:
       return (state, time, immediate) => timeCalls.push([state.value, time, immediate]);
     case 0x279FD60:
@@ -197,7 +224,12 @@ global.NativeFunction = function (address, returnType, argumentTypes) {
     case 0x2B9C070:
       return () => new Pointer(0x820000);
     case 0x2C95CA0:
-      return () => (++staticClassLookups === 1 ? nitroPickupClass : nitroInventoryClass);
+      return () => {
+        staticClassLookups++;
+        if (staticClassLookups === 1) return nitroPickupClass;
+        if (staticClassLookups === 2) return nitroInventoryClass;
+        return spiritWalkClass;
+      };
     case 0x2C97F00:
       return () => nitroInventoryClass;
     case 0x433F490:
@@ -300,6 +332,14 @@ if (memory.get(nitroPickupActor.value + 0x2F0) !== 1 || !launchedNitro.includes(
 if (!tierCalls.some(call => call[0] === playerState.value && call[1] === 2)) {
   throw new Error('spell charge was not locked to tier one');
 }
+if (multiplayer) {
+  if (!equippedSpellCalls.some(call => call[0] === playerSpellManager.value && call[1] === 1 && call[2] === spiritWalkClass.value)) {
+    throw new Error('first player was not locked to spirit walk only');
+  }
+  if (!equippedSpellCalls.some(call => call[0] === playerSpellManager2.value && call[1] === 1 && call[2] === spiritWalkClass.value)) {
+    throw new Error('second player was not locked to spirit walk only');
+  }
+}
 if (!damageCalls.some(call => call[0] === pawn.value && call[1] === 0)) {
   throw new Error('invincibility was not applied');
 }
@@ -356,8 +396,16 @@ if (!timeCalls.some(call => call[0] === gameState.value && call[1] === 12 && cal
   throw new Error('time of day was not fixed at noon');
 }
 
+const equippedCallsBeforeRelock = equippedSpellCalls.length;
+if (multiplayer) {
+  memory.set(playerSpellManager.value + 0x288, playerEquippedData.value);
+  memory.set(playerSpellManager.value + 0x290, 2);
+}
 intervals.get(500)();
 if (spawnedNitro.length !== 1) throw new Error('an existing nitro pickup was duplicated');
+if (multiplayer && equippedSpellCalls.length !== equippedCallsBeforeRelock + 1) {
+  throw new Error('a changed spell loadout was not locked back to spirit walk');
+}
 
 nitroPickupPresent = false;
 nitroPickupActor = new Pointer(0);
@@ -379,26 +427,53 @@ if (destroyed.includes(farPawn.value) || destroyed.includes(farController.value)
   throw new Error('distant predator was removed');
 }
 
-memory.set(root.value + 0x1D0, 4434.21 + 3000);
-if (multiplayer) memory.set(root2.value + 0x1D0, 4434.21 + 3000);
-intervals.get(500)();
-const resets = timeouts.filter(timer => timer.delay === 10000);
-if (resets.length !== (multiplayer ? 2 : 1)) throw new Error('per-player flight reset was not scheduled');
-
+let flightResets;
 memory.set(warship.value + 0x2A0, 900);
 memory.set(packIceActor.value + 0x350, 3);
 destroyed.length = 0;
-resets[0].callback();
+if (multiplayer) {
+  memory.set(root.value + 0x1D0, 4434.21 + 3000);
+  memory.set(root.value + 0x1D8, 7297.65);
+  intervals.get(500)();
+  const boundaryResets = timeouts.filter(timer => timer.delay === 10000);
+  if (boundaryResets.length !== 1) throw new Error('mountain activity boundary reset was not scheduled');
+  boundaryResets[0].callback();
+  if (teleportCalls.filter(call => call.actor === pawn.value).length !== 2) {
+    throw new Error('out-of-range mountain player was not returned');
+  }
+  if (teleportCalls.filter(call => call.actor === warship.value).length !== 1 || memory.get(warship.value + 0x2A0) !== 900) {
+    throw new Error('mountain boundary return incorrectly reset the ship');
+  }
+  if (destroyed.includes(packIceActor.value)) {
+    throw new Error('mountain boundary return incorrectly reset pack ice');
+  }
+
+  memory.set(root.value + 0x1D0, 4434.21 + 3000);
+  memory.set(root.value + 0x1D8, 7297.65 - 800);
+  memory.set(root2.value + 0x1D0, 4434.21 + 3000);
+  memory.set(root2.value + 0x1D8, 7297.65 - 800);
+  intervals.get(500)();
+  const allResets = timeouts.filter(timer => timer.delay === 10000);
+  flightResets = allResets.slice(1);
+  if (flightResets.length !== 2) throw new Error('true per-player flight reset was not scheduled');
+} else {
+  memory.set(root.value + 0x1D0, 4434.21 + 3000);
+  intervals.get(500)();
+  flightResets = timeouts.filter(timer => timer.delay === 10000);
+  if (flightResets.length !== 1) throw new Error('single-player flight reset was not scheduled');
+}
+
+flightResets[0].callback();
 if (multiplayer) {
   if (teleportCalls.filter(call => call.actor === warship.value).length !== 1) {
     throw new Error('first returning player interrupted the second player flight');
   }
   if (memory.get(warship.value + 0x2A0) !== 900 || destroyed.includes(packIceActor.value)) {
-    throw new Error('shared world was reset before all players returned');
+    throw new Error('shared world was reset before all truly flying players returned');
   }
-  resets[1].callback();
+  flightResets[1].callback();
 }
-if (teleportCalls.filter(call => call.actor === pawn.value).length !== 2) {
+if (teleportCalls.filter(call => call.actor === pawn.value).length !== (multiplayer ? 3 : 2)) {
   throw new Error('player was not returned after ten seconds');
 }
 if (multiplayer && teleportCalls.filter(call => call.actor === pawn2.value).length !== 2) {
