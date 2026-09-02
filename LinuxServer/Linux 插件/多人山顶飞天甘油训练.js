@@ -13,6 +13,7 @@
   9. 开局把船移动到训练水域；每次复位时恢复船体与受损浮冰。
   10. 刷新点的甘油被拿走或滚远后自动生成下一枚。
   11. 每名玩家独立计时复位；只有真正飞出山顶的玩家返回后，才统一重置一次船和浮冰。
+  12. 首名玩家进入房间后自动结束打牌阶段；后续玩家沿用随机职业插件直接加入当前对局。
 
   注意:
   - 多人版与单人版互斥；启用本插件前必须先停用单人版。
@@ -45,6 +46,12 @@ if (mod !== null) {
 
     var GWorld = base.add(0x5C9B6D0);
     var ADH_GameMode_HasMatchStarted = new NativeFunction(base.add(0x26C6160), 'uint8', ['pointer']);
+    var AGameMode_SetMatchState = new NativeFunction(base.add(0x43360E0), 'void', ['pointer', 'uint64']);
+    var ADH_RoleDealer_EndGame = new NativeFunction(base.add(0x2730050), 'void', ['pointer', 'uint8']);
+    var ADH_GameMode_RandomizeThralls = new NativeFunction(base.add(0x26CB250), 'void', ['pointer']);
+    var AGameMode_StartMatch = new NativeFunction(base.add(0x4335A40), 'void', ['pointer']);
+    var AGameMode_Tick = base.add(0x4336360);
+    var MatchState_PokerGame = base.add(0x5A1B978);
     var ADH_PlayerState_GetOwningController = new NativeFunction(base.add(0x277E4F0), 'pointer', ['pointer']);
     var ADH_PlayerState_SetSpellChargeTier = new NativeFunction(base.add(0x277FAD0), 'void', ['pointer', 'int8']);
     var ADH_SpellManager_SetEquippedSpells = new NativeFunction(base.add(0x27A75D0), 'void', ['pointer', 'pointer']);
@@ -127,6 +134,8 @@ if (mod !== null) {
     var Trainees = Object.create(null);
     var WorldResetPending = false;
     var ShipReady = false;
+    var AutoStartBusy = false;
+    var AutoStartRetryAt = 0;
     var NitroPickupClass = ptr(0);
     var NitroInventoryClass = ptr(0);
     var SpiritWalkClass = ptr(0);
@@ -206,6 +215,51 @@ if (mod !== null) {
             return isReadable(gameState) ? gameState : ptr(0);
         } catch (e) {
             return ptr(0);
+        }
+    }
+
+    function isPokerGameState(gameMode) {
+        try {
+            return gameMode && !gameMode.isNull() &&
+                gameMode.add(0x2C0).readU64().toString() === MatchState_PokerGame.readU64().toString();
+        } catch (e) {
+            return false;
+        }
+    }
+
+    /*
+       开局过渡必须在 Unreal 游戏线程执行；Tick Hook 只负责一次性尝试，失败后延迟重试。
+       后续玩家不触发此流程：HasMatchStarted() 为真时直接由原生 PostLogin/随机职业插件接入。
+    */
+    function autoStartFromPoker() {
+        if (AutoStartBusy || Date.now() < AutoStartRetryAt) return;
+        var gameMode = getGameMode();
+        if (gameMode.isNull() || hasMatchStarted() || !isPokerGameState(gameMode)) return;
+
+        var players = listPlayers();
+        if (players.length < 1) return;
+        var roleDealer = ptr(0);
+        try { roleDealer = gameMode.add(0x3A8).readPointer(); } catch (e) {}
+        if (roleDealer.isNull()) {
+            AutoStartRetryAt = Date.now() + 1000;
+            return;
+        }
+
+        AutoStartBusy = true;
+        try {
+            AGameMode_SetMatchState(gameMode, MatchState_PokerGame.readU64());
+            ADH_RoleDealer_EndGame(roleDealer, 1);
+            ADH_GameMode_RandomizeThralls(gameMode);
+            /* 与 GM 控制台相同：标记赛前说明已完成，再调用原生 StartMatch。 */
+            gameMode.add(0x488).writeU8(1);
+            AGameMode_StartMatch(gameMode);
+            if (!hasMatchStarted()) AutoStartRetryAt = Date.now() + 1000;
+            else send('多人山顶飞天甘油训练: 已自动跳过打牌并进入练习');
+        } catch (e) {
+            AutoStartRetryAt = Date.now() + 1000;
+            console.log('[山顶飞天甘油] 自动跳过打牌失败，将重试: ' + e);
+        } finally {
+            AutoStartBusy = false;
         }
     }
 
@@ -874,6 +928,21 @@ if (mod !== null) {
             clampChargeTierOne(this.spellManager);
         }
     });
+
+    try {
+        Interceptor.attach(AGameMode_Tick, {
+            onEnter: function (args) {
+                try {
+                    var gameMode = getGameMode();
+                    if (!gameMode.isNull() && args[0].equals(gameMode)) autoStartFromPoker();
+                } catch (e) {
+                    console.log('[山顶飞天甘油] 自动开局 Tick 异常: ' + e);
+                }
+            }
+        });
+    } catch (e) {
+        console.log('[山顶飞天甘油] 自动开局 Hook 安装失败: ' + e);
+    }
 
     setInterval(updateTrainees, MonitorIntervalMs);
     setInterval(clearNearbyPredators, PredatorPollMs);

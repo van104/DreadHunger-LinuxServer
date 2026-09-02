@@ -188,6 +188,11 @@ global.NativeFunction = function (address, returnType, argumentTypes) {
   switch (offset) {
     case 0x26C6160:
       return () => 1;
+    case 0x43360E0:
+    case 0x2730050:
+    case 0x26CB250:
+    case 0x4335A40:
+      return () => {};
     case 0x277E4F0:
       return ps => ps.equals(playerState) ? controller : (ps.equals(playerState2) ? controller2 : new Pointer(0));
     case 0x277FAD0:
@@ -527,6 +532,16 @@ class MountainNitroTrainingTests(unittest.TestCase):
                     check=False,
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_multiplayer_plugin_auto_starts_after_poker_on_game_thread(self):
+        source = MULTIPLAYER_PLUGIN_PATH.read_text(encoding="utf-8")
+        self.assertIn("function autoStartFromPoker", source)
+        self.assertIn("base.add(0x43360E0)", source)
+        self.assertIn("base.add(0x2730050)", source)
+        self.assertIn("base.add(0x26CB250)", source)
+        self.assertIn("base.add(0x4335A40)", source)
+        self.assertIn("Interceptor.attach(AGameMode_Tick", source)
+        self.assertIn("gameMode.add(0x488).writeU8(1)", source)
 
 
 if __name__ == "__main__":

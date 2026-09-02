@@ -1,6 +1,6 @@
 {
   "map": "Departure_Persistent",
-  "maxplayers": 8,
+  "maxplayers": 64,
   "thralls": 2,
   "dayminutes": 9,
   "daysbeforeblizzard": 3,

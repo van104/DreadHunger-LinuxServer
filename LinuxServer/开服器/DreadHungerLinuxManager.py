@@ -31,6 +31,7 @@ SERVER_BINARY = "DreadHungerServer-Linux-Shipping"
 CONFIG_FILE = "manager_config.json"
 STATE_FILE = ".dread_hunger_manager_state.json"
 PATCH_EXTENSIONS = {".js", ".pak", ".sig"}
+MAX_PLAYERS_LIMIT = 64
 GAME_KEYS = (
     "maxplayers",
     "thralls",
@@ -177,7 +178,7 @@ def normalize_config(raw: Dict[str, Any], root: Path) -> Dict[str, Any]:
 
     result = {
         "map": valid_map_name(config["map"]),
-        "maxplayers": valid_int(config["maxplayers"], "maxplayers", 1, 32),
+        "maxplayers": valid_int(config["maxplayers"], "maxplayers", 1, MAX_PLAYERS_LIMIT),
         "thralls": valid_int(config["thralls"], "thralls", 0, 8),
         "dayminutes": valid_int(config["dayminutes"], "dayminutes", 1, 240),
         "daysbeforeblizzard": valid_int(config["daysbeforeblizzard"], "daysbeforeblizzard", 0, 30),
@@ -1428,7 +1429,7 @@ body{
               </el-col>
               <el-col :xs="12" :sm="6" :md="4">
                 <el-form-item label="最大玩家">
-                  <el-input-number v-model="config.maxplayers" :min="1" :max="32" style="width:100%" />
+                  <el-input-number v-model="config.maxplayers" :min="1" :max="64" style="width:100%" />
                 </el-form-item>
               </el-col>
               <el-col :xs="12" :sm="6" :md="4">
