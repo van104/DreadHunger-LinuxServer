@@ -344,10 +344,10 @@ if (multiplayer) {
   if (!managerTierCalls.some(call => call[0] === playerSpellManager2.value && call[1] === 2)) {
     throw new Error('second player spell manager tier was not locked to one');
   }
-  if (!equippedSpellCalls.some(call => call[0] === playerSpellManager.value && call[1] === 5 && call[2].every(value => value === spiritWalkClass.value))) {
+  if (!equippedSpellCalls.some(call => call[0] === playerSpellManager.value && call[1] === 3 && call[2].every(value => value === spiritWalkClass.value))) {
     throw new Error('first player was not locked to spirit walk only');
   }
-  if (!equippedSpellCalls.some(call => call[0] === playerSpellManager2.value && call[1] === 5 && call[2].every(value => value === spiritWalkClass.value))) {
+  if (!equippedSpellCalls.some(call => call[0] === playerSpellManager2.value && call[1] === 3 && call[2].every(value => value === spiritWalkClass.value))) {
     throw new Error('second player was not locked to spirit walk only');
   }
 }

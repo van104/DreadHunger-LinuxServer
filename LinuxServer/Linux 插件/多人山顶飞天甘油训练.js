@@ -151,8 +151,8 @@ if (mod !== null) {
     HullBreachActors.writePointer(ptr(0));
     HullBreachActors.add(8).writeU32(0);
     HullBreachActors.add(12).writeU32(0);
-    /* 客户端轮盘需要完整的 5 个方向槽位；每个槽位都绑定同一个灵界行走。 */
-    var ThrallSpellSlots = 5;
+    /* 客户端轮盘保留 3 个方向槽位；每个槽位都绑定同一个灵界行走。 */
+    var ThrallSpellSlots = 3;
     var SpiritWalkSpellData = Memory.alloc(Process.pointerSize * ThrallSpellSlots);
     var SpiritWalkOnlyArray = Memory.alloc(16);
     SpiritWalkOnlyArray.writePointer(SpiritWalkSpellData);
