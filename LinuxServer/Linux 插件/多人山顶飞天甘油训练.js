@@ -48,6 +48,7 @@ if (mod !== null) {
     var ADH_PlayerState_GetOwningController = new NativeFunction(base.add(0x277E4F0), 'pointer', ['pointer']);
     var ADH_PlayerState_SetSpellChargeTier = new NativeFunction(base.add(0x277FAD0), 'void', ['pointer', 'int8']);
     var ADH_SpellManager_SetEquippedSpells = new NativeFunction(base.add(0x27A75D0), 'void', ['pointer', 'pointer']);
+    var ADH_SpellManager_SetSpellChargeTier = new NativeFunction(base.add(0x27A7AA0), 'void', ['pointer', 'int8']);
     var ADH_GameStateBase_SetTimeOfDay = new NativeFunction(
         base.add(0x26D4120),
         'void',
@@ -114,6 +115,8 @@ if (mod !== null) {
     /* ETotemSpellTiers: 0=TST_UNDEFINED, 1=TST_ZERO, 2=TST_ONE。 */
     var SpellTierOne = 2;
     var CooldownMultiplierOffset = 0x280;
+    var SpellChargeLevelOffset = 0x284;
+    var TierOneChargeLevel = 0.34;
     var SpellCooldownDataOffset = 0x2A8;
     var SpellCooldownCountOffset = 0x2B0;
     var SpellCooldownEntrySize = 0x10;
@@ -148,11 +151,13 @@ if (mod !== null) {
     HullBreachActors.writePointer(ptr(0));
     HullBreachActors.add(8).writeU32(0);
     HullBreachActors.add(12).writeU32(0);
-    var SpiritWalkSpellData = Memory.alloc(Process.pointerSize);
+    /* 客户端轮盘需要完整的 5 个方向槽位；每个槽位都绑定同一个灵界行走。 */
+    var ThrallSpellSlots = 5;
+    var SpiritWalkSpellData = Memory.alloc(Process.pointerSize * ThrallSpellSlots);
     var SpiritWalkOnlyArray = Memory.alloc(16);
     SpiritWalkOnlyArray.writePointer(SpiritWalkSpellData);
-    SpiritWalkOnlyArray.add(8).writeU32(1);
-    SpiritWalkOnlyArray.add(12).writeU32(1);
+    SpiritWalkOnlyArray.add(8).writeU32(ThrallSpellSlots);
+    SpiritWalkOnlyArray.add(12).writeU32(ThrallSpellSlots);
 
     function isReadable(address) {
         try {
@@ -433,7 +438,13 @@ if (mod !== null) {
 
     function lockLevelOne(playerState) {
         try {
-            if (isReadable(playerState)) ADH_PlayerState_SetSpellChargeTier(playerState, SpellTierOne);
+            if (!isReadable(playerState)) return;
+            ADH_PlayerState_SetSpellChargeTier(playerState, SpellTierOne);
+            var spellManager = playerState.add(PlayerStateSpellManagerOffset).readPointer();
+            if (isReadable(spellManager)) {
+                ADH_SpellManager_SetSpellChargeTier(spellManager, SpellTierOne);
+                spellManager.add(SpellChargeLevelOffset).writeFloat(TierOneChargeLevel);
+            }
         } catch (e) {
             console.log('[山顶飞天甘油] 锁定一级技能失败: ' + e);
         }
@@ -466,15 +477,20 @@ if (mod !== null) {
             var equippedSpells = spellManager.add(EquippedSpellsOffset);
             var equippedData = equippedSpells.readPointer();
             var equippedCount = equippedSpells.add(8).readU32();
-            if (
-                equippedCount === 1 &&
-                isReadable(equippedData) &&
-                equippedData.readPointer().equals(spellClass)
-            ) {
-                return true;
+            if (equippedCount === ThrallSpellSlots && isReadable(equippedData)) {
+                var allSpiritWalk = true;
+                for (var j = 0; j < ThrallSpellSlots; j++) {
+                    if (!equippedData.add(j * Process.pointerSize).readPointer().equals(spellClass)) {
+                        allSpiritWalk = false;
+                        break;
+                    }
+                }
+                if (allSpiritWalk) return true;
             }
 
-            SpiritWalkSpellData.writePointer(spellClass);
+            for (var i = 0; i < ThrallSpellSlots; i++) {
+                SpiritWalkSpellData.add(i * Process.pointerSize).writePointer(spellClass);
+            }
             ADH_SpellManager_SetEquippedSpells(spellManager, SpiritWalkOnlyArray);
             return true;
         } catch (e) {
@@ -779,6 +795,14 @@ if (mod !== null) {
         }
     }
 
+    function clampChargeTierOne(spellManager) {
+        try {
+            if (!isReadable(spellManager)) return;
+            spellManager.add(SpellChargeLevelOffset).writeFloat(TierOneChargeLevel);
+            ADH_SpellManager_SetSpellChargeTier(spellManager, SpellTierOne);
+        } catch (e) {}
+    }
+
     /* 只在法术效果结束后删除冷却项，不能在施法时清除，否则客户端效果计时会卡住。 */
     function clearFinishedSpellCooldown(spellManager, spell) {
         try {
@@ -824,6 +848,7 @@ if (mod !== null) {
         },
         onLeave: function () {
             applyNoCooldown(this.spellManager);
+            clampChargeTierOne(this.spellManager);
         }
     });
 
@@ -846,6 +871,7 @@ if (mod !== null) {
         onLeave: function () {
             clearFinishedSpellCooldown(this.spellManager, this.spell);
             applyNoCooldown(this.spellManager);
+            clampChargeTierOne(this.spellManager);
         }
     });
 

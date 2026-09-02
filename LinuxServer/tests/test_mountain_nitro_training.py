@@ -17,6 +17,7 @@ const hooks = new Map();
 const intervals = new Map();
 const timeouts = [];
 const tierCalls = [];
+const managerTierCalls = [];
 const equippedSpellCalls = [];
 const damageCalls = [];
 const teleportCalls = [];
@@ -191,11 +192,15 @@ global.NativeFunction = function (address, returnType, argumentTypes) {
       return ps => ps.equals(playerState) ? controller : (ps.equals(playerState2) ? controller2 : new Pointer(0));
     case 0x277FAD0:
       return (ps, tier) => tierCalls.push([ps.value, tier]);
+    case 0x27A7AA0:
+      return (manager, tier) => managerTierCalls.push([manager.value, tier]);
     case 0x27A75D0:
       return (manager, spells) => {
         const data = spells.readPointer();
         const count = spells.add(8).readU32();
-        equippedSpellCalls.push([manager.value, count, data.readPointer().value]);
+        const classes = [];
+        for (let i = 0; i < count; i++) classes.push(data.add(i * 8).readPointer().value);
+        equippedSpellCalls.push([manager.value, count, classes]);
         const equipped = manager.add(0x288);
         equipped.writePointer(data);
         equipped.add(8).writeU32(count);
@@ -333,10 +338,16 @@ if (!tierCalls.some(call => call[0] === playerState.value && call[1] === 2)) {
   throw new Error('spell charge was not locked to tier one');
 }
 if (multiplayer) {
-  if (!equippedSpellCalls.some(call => call[0] === playerSpellManager.value && call[1] === 1 && call[2] === spiritWalkClass.value)) {
+  if (!managerTierCalls.some(call => call[0] === playerSpellManager.value && call[1] === 2)) {
+    throw new Error('first player spell manager tier was not locked to one');
+  }
+  if (!managerTierCalls.some(call => call[0] === playerSpellManager2.value && call[1] === 2)) {
+    throw new Error('second player spell manager tier was not locked to one');
+  }
+  if (!equippedSpellCalls.some(call => call[0] === playerSpellManager.value && call[1] === 5 && call[2].every(value => value === spiritWalkClass.value))) {
     throw new Error('first player was not locked to spirit walk only');
   }
-  if (!equippedSpellCalls.some(call => call[0] === playerSpellManager2.value && call[1] === 1 && call[2] === spiritWalkClass.value)) {
+  if (!equippedSpellCalls.some(call => call[0] === playerSpellManager2.value && call[1] === 5 && call[2].every(value => value === spiritWalkClass.value))) {
     throw new Error('second player was not locked to spirit walk only');
   }
 }
