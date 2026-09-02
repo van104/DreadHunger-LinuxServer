@@ -42,6 +42,13 @@ class GMPokerControlSourceTests(unittest.TestCase):
         self.assertIn("confirmSkipPoker", console_source)
         self.assertIn("跳过打牌并开始游戏", console_source)
 
+    def test_match_state_commands_run_from_game_mode_tick(self):
+        source = PLUGIN_PATH.read_text(encoding="utf-8")
+        self.assertIn("base.add(0x4336360)", source)
+        self.assertIn("PendingGameThreadCommands", source)
+        self.assertIn("Interceptor.attach(AGameMode_Tick", source)
+        self.assertIn("requiresGameThread(cmd.action)", source)
+
 
 if __name__ == "__main__":
     unittest.main()

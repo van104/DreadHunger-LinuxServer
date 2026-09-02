@@ -22,6 +22,7 @@ if (mod !== null) {
     var ResultDir        = RuntimeDir + '/gm_results';
     var CommandPollMs    = 1000;
     var PlayerPollMs     = 1000;
+    var PendingGameThreadCommands = [];
     /* ================ */
 
     /* ── 游戏函数 (偏移量与现有 Linux 插件一致) ── */
@@ -37,6 +38,7 @@ if (mod !== null) {
     var ADH_RoleDealer_EndGame          = new NativeFunction(base.add(0x2730050), 'void', ['pointer', 'uint8']);
     var ADH_GameMode_RandomizeThralls   = new NativeFunction(base.add(0x26CB250), 'void', ['pointer']);
     var AGameMode_StartMatch            = new NativeFunction(base.add(0x4335A40), 'void', ['pointer']);
+    var AGameMode_Tick                  = base.add(0x4336360);
     var MatchState_PokerGame            = base.add(0x5A1B978);
     /* FVector 在 Linux SysV ABI 下按值传递，不能传 FVector 指针。 */
     var K2_SetActorLocation  = new NativeFunction(base.add(0x40A0430), 'uint8',   ['pointer', ['float', 'float', 'float'], 'uint8', 'pointer', 'uint8']);
@@ -862,6 +864,57 @@ if (mod !== null) {
         'execute_player':   gmExecutePlayer
     };
 
+    function requiresGameThread(action) {
+        return action === 'skip_poker' || action === 'end_game';
+    }
+
+    function executeCommand(cmd) {
+        var handler = ActionHandlers[cmd.action];
+        if (handler) {
+            try {
+                var result = handler(cmd.params || {});
+                writeCommandResult(cmd, result);
+                send({
+                    type: 'gm_result',
+                    id: cmd.id || '',
+                    action: cmd.action,
+                    result: result
+                });
+            } catch (e) {
+                var failed = { success: false, error: String(e) };
+                writeCommandResult(cmd, failed);
+                send({
+                    type: 'gm_error',
+                    id: cmd.id || '',
+                    action: cmd.action,
+                    error: String(e)
+                });
+            }
+        } else {
+            writeCommandResult(cmd, { success: false, error: '未知操作: ' + cmd.action });
+            send({
+                type: 'gm_error',
+                id: cmd.id || '',
+                action: cmd.action,
+                error: '未知操作: ' + cmd.action
+            });
+        }
+    }
+
+    /* StartMatch 会同步初始化 World/Pawn/Timer，必须从服务器游戏线程调用。 */
+    try {
+        Interceptor.attach(AGameMode_Tick, {
+            onEnter: function (args) {
+                if (PendingGameThreadCommands.length === 0) return;
+                var currentGameMode = getGameMode();
+                if (!currentGameMode || !args[0].equals(currentGameMode)) return;
+                executeCommand(PendingGameThreadCommands.shift());
+            }
+        });
+    } catch (tickHookError) {
+        send({ type: 'gm_debug', error: 'GameMode Tick Hook 安装失败: ' + tickHookError });
+    }
+
     /* ── 指令轮询 ── */
 
     function processCommands() {
@@ -883,36 +936,8 @@ if (mod !== null) {
 
             for (var i = 0; i < data.commands.length; i++) {
                 var cmd = data.commands[i];
-                var handler = ActionHandlers[cmd.action];
-                if (handler) {
-                    try {
-                        var result = handler(cmd.params || {});
-                        writeCommandResult(cmd, result);
-                        send({
-                            type: 'gm_result',
-                            id: cmd.id || '',
-                            action: cmd.action,
-                            result: result
-                        });
-                    } catch (e) {
-                        var failed = { success: false, error: String(e) };
-                        writeCommandResult(cmd, failed);
-                        send({
-                            type: 'gm_error',
-                            id: cmd.id || '',
-                            action: cmd.action,
-                            error: String(e)
-                        });
-                    }
-                } else {
-                    writeCommandResult(cmd, { success: false, error: '未知操作: ' + cmd.action });
-                    send({
-                        type: 'gm_error',
-                        id: cmd.id || '',
-                        action: cmd.action,
-                        error: '未知操作: ' + cmd.action
-                    });
-                }
+                if (requiresGameThread(cmd.action)) PendingGameThreadCommands.push(cmd);
+                else executeCommand(cmd);
             }
         } catch (e) { send({type:'gm_debug', error:String(e), stack:e.stack||''}); }
     }

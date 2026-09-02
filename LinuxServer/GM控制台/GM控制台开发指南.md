@@ -147,6 +147,7 @@ var gs     = gm.add(0x280).readPointer();      // AGameMode::GameState
 | `ADH_RoleDealer::EndGame` | `0x2730050` | `0x2930050` | `void (ptr dealer, u8 immediate)` | 立即结束打牌并清理牌局 |
 | `ADH_GameMode::RandomizeThralls` | `0x26CB250` | `0x28cb250` | `void (ptr gm)` | 按本局设置随机分配狼人 |
 | `AGameMode::StartMatch` | `0x4335A40` | `0x4535a40` | `void (ptr gm)` | 进入正式 Match |
+| `AGameMode::Tick` | `0x4336360` | `0x4536360` | `void (ptr gm, float dt)` | 在服务器游戏线程执行待处理的比赛状态指令 |
 
 ---
 
@@ -207,7 +208,7 @@ Interceptor.attach(rtmImpl, {
 
 > **注意**：`SetWinningTeam` 有幂等检查（`gs+0x514 == winner` 时直接返回），但 winner=1 时 gs+0x514 默认为 0，不会触发幂等；只有同一局重复设置相同阵营时才幂等跳过。hook 强制返回 true 保证结算一定触发。
 
-打牌阶段尚未进入正式 Match，`ReadyToEndMatch` 不会被 Tick 调用。此时结束游戏必须先执行与游戏原生流程一致的过渡：使用 `MatchState::PokerGame`（RVA `0x5A1B978`）调用 `AGameMode::SetMatchState()` → `RoleDealer::EndGame(true)` → `RandomizeThralls()` → 写入赛前完成标志 `GameMode+0x488` → `AGameMode::StartMatch()`；验证 Match 已开始后再设置获胜阵营并等待自然结算。不能从 `WaitingToStart` 直接调用 `StartMatch()`，否则状态虽然可能变成 `InProgress`，但开局初始化链会访问尚未建立的对象。
+打牌阶段尚未进入正式 Match，`ReadyToEndMatch` 不会被 Tick 调用。此时结束游戏必须先执行与游戏原生流程一致的过渡：使用 `MatchState::PokerGame`（RVA `0x5A1B978`）调用 `AGameMode::SetMatchState()` → `RoleDealer::EndGame(true)` → `RandomizeThralls()` → 写入赛前完成标志 `GameMode+0x488` → `AGameMode::StartMatch()`；验证 Match 已开始后再设置获胜阵营并等待自然结算。不能从 `WaitingToStart` 直接调用 `StartMatch()`。另外，`StartMatch()` 会同步运行 `HandleMatchHasStarted` 并初始化 World、Pawn 和 Timer，不能从 Frida `setInterval` 线程直接调用；`skip_poker` 和打牌阶段的 `end_game` 必须排队后由 `AGameMode::Tick` Hook 在服务器游戏线程执行。
 
 ### 2. 消息发送
 
