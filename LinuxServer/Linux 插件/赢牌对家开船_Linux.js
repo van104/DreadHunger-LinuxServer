@@ -270,7 +270,8 @@ if (mod !== null) {
     function broadcastReward(config, player, summary) {
         var text = String(config.announcement || '');
         if (!text) return;
-        text = text.split('{player}').join(player.name || '玩家');
+        var profession = RoleNamesCN[player.role] || player.role || player.name || '玩家';
+        text = text.split('{player}').join(profession);
         text = text.split('{rewards}').join(summary);
         broadcastToAll(FNameToFText(newFName(text)), FNameToFText(newFName(NoticeTitle)));
     }
@@ -539,7 +540,7 @@ if (mod !== null) {
             }
             RewardDelivered = true;
             var summary = rewardSummary(parts, backpackSlots);
-            broadcastReward(config, player, summary);
+            broadcastReward(config, winnerInfo || player, summary);
             ADH_PlayerController_ReceiveThrallMessage(
                 player.controller,
                 FNameToFText(newFName('[牌局奖励] 已获得：' + summary)),

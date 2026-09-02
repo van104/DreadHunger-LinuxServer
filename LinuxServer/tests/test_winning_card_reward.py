@@ -69,6 +69,7 @@ const gameState = new Pointer(0x720000);
 const playerData = new Pointer(0x730000);
 const playerState1 = new Pointer(0x740000);
 const playerState2 = new Pointer(0x741000);
+const roleInfo1 = new Pointer(0x742000);
 const gameplayController1 = new Pointer(0x750000);
 const gameplayController2 = new Pointer(0x751000);
 const gameplayPawn1 = new Pointer(0x760000);
@@ -119,6 +120,9 @@ function writeFString(output, value) {
   output.writePointer(data);
   output.add(8).writeU32(value.length);
 }
+
+memory.set(playerState1.value + 0x588, roleInfo1.value);
+writeFString(roleInfo1.add(0x48), 'Captain');
 
 global.NativeFunction = function(address) {
   const offset = address.value - 0x200000;
@@ -187,8 +191,11 @@ if (config.mode === 'random' && (inventoryAdds.length !== 1 || inventoryAdds[0][
   throw new Error('random reward did not grant exactly one configured item');
 }
 const expectedReward = config.mode === 'fixed' ? '煤炭 x3' : '燧发手枪 x1';
-if (!messages.some(entry => entry[1].includes('赢家甲') && entry[1].includes(expectedReward))) {
-  throw new Error('editable announcement was not broadcast');
+if (!messages.some(entry => entry[1].includes('船长') && entry[1].includes(expectedReward))) {
+  throw new Error('editable announcement did not use the winning profession');
+}
+if (messages.some(entry => entry[1].includes('赢家甲') && entry[1].includes(expectedReward))) {
+  throw new Error('editable announcement still used the winning username');
 }
 """
 

@@ -1717,7 +1717,7 @@ def app_html() -> str:
                     <el-button v-if="rewardConfig.items.length < 8" plain :icon="Box" @click="addRewardItem">添加奖励物品</el-button>
                   </div>
                 </el-form-item>
-                <el-form-item label="全服公告（支持 {player} 和 {rewards}）">
+                <el-form-item label="全服公告（{player}=赢牌职业，{rewards}=奖励内容）">
                   <el-input v-model="rewardConfig.announcement" type="textarea" :rows="3" maxlength="500" show-word-limit />
                 </el-form-item>
                 <el-button type="success" :icon="Check" :loading="rewardSaving" @click="saveWinningCardReward">保存赢牌奖励配置</el-button>
