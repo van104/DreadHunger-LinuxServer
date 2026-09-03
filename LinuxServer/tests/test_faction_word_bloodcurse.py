@@ -90,7 +90,7 @@ memory.set(gameMode.value + 0x280, gameState.value);
 memory.set(gameMode.value + 0x2C0, 0x5C1B978);
 memory.set(gameMode.value + 0x3A8, 0x7F0000);
 memory.set(gameState.value + 0x238, psData.value);
-memory.set(gameState.value + 0x240, 7);
+memory.set(gameState.value + 0x240, 2);
 memory.set(gameState.value + 0x2A8, warship.value);
 memory.set(gameState.value + 0x348, 5);
 memory.set(warship.value + 0x130, warshipRoot.value);
@@ -167,12 +167,6 @@ cast.onEnter(poisonArgs);
 runTick();
 if (deadCalls.length !== 1) throw new Error('poison did not directly kill target');
 
-const notifyDeath = hooks.get(0x28CA7D0);
-if (!notifyDeath) throw new Error('NotifyDeath hook missing');
-notifyDeath.onEnter([gameMode, pawns[3], controllers[4]]);
-runTick();
-if (deadCalls.length < 2) throw new Error('blood curse did not queue teammate death');
-
 memory.set(gameState.value + 0x348, 18);
 runTick();
 now += 30000;
@@ -201,6 +195,8 @@ class FactionWordBloodCurseTests(unittest.TestCase):
         source = PLUGIN_PATH.read_text(encoding="utf-8")
         for name in ("开局沉默", "狼人无限技能", "修复充能", "表情不当狼", "山顶训练"):
             self.assertIn(name, source)
+        self.assertIn("mode: 'two_player_test'", source)
+        self.assertIn("requiredPlayers: 2", source)
         self.assertIn("requiredPlayers: 7", source)
         self.assertIn("spiritWalkTier: 4", source)
         self.assertIn("ADH_GameState_SetWinningTeam", source)

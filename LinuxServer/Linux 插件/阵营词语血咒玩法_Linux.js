@@ -1,7 +1,7 @@
 /*
  * 阵营词语·血咒玩法（Dread Hunger Finale 1.2.4 Linux）
  *
- * 本插件是一个独立的 7 人训练局：A/B 各 3 名好人，1 名狼人。
+ * 本插件支持正式 7 人局和当前的双人测试局：A 好人 + 1 名狼人。
  * 原版职业仍由“随机职业 Plus”分配；本文件只维护自定义阵营、词语和规则。
  *
  * 重要：所有会改变 UObject 状态的调用都在 AGameMode::Tick Hook 中执行。
@@ -15,7 +15,11 @@ if (mod !== null) {
 
     /* ===== 可直接编辑的玩法参数 ===== */
     var CONFIG = {
-        requiredPlayers: 7,
+        /* 当前先用双人测试；正式玩法改为 'seven_player' 即可恢复 7 人局。 */
+        mode: 'two_player_test',
+        requiredPlayers: 2,
+        factionSizes: { A: 1, B: 0, W: 1 },
+        production: { requiredPlayers: 7, factionSizes: { A: 3, B: 3, W: 1 } },
         countdownSeconds: 10,
         silenceJitterMinSeconds: 0,
         silenceJitterMaxSeconds: 30,
@@ -28,10 +32,10 @@ if (mod !== null) {
             { a: '大海', b: '湖泊' }
         ],
         announcement: {
-            waiting: '[血咒玩法] 等待 7 名玩家，当前 {count}/7。',
+            waiting: '[血咒玩法] 等待 {required} 名玩家，当前 {count}/{required}。',
             countdown: '[血咒玩法] 阵营已分配，{seconds} 秒后开始行动。',
             started: '[血咒玩法] 训练开始：活人禁止直接说出词语，只能模糊描述。',
-            lateJoin: '[血咒玩法] 本局已有 7 名玩家，当前玩家等待下一局。',
+            lateJoin: '[血咒玩法] 本局玩家名单已锁定，当前玩家等待下一局。',
             silenceStart: '[沉默阶段] {phase}开始，全体玩家沉默 {seconds} 秒。',
             silenceEnd: '[沉默阶段] 沉默结束，可以正常交流。',
             bloodCurse: '[血咒] 发生队友误杀，凶手将受到血咒。',
@@ -41,6 +45,10 @@ if (mod !== null) {
             draw: '[结算] 所有阵营均已覆灭，本局平局。'
         }
     };
+    if (CONFIG.mode === 'seven_player') {
+        CONFIG.requiredPlayers = CONFIG.production.requiredPlayers;
+        CONFIG.factionSizes = CONFIG.production.factionSizes;
+    }
 
     /* ===== Finale 1.2.4 Linux 地址 ===== */
     var GWorld = base.add(0x5C9B6D0);
@@ -433,10 +441,23 @@ if (mod !== null) {
         var shuffled = shuffle(selected.slice());
         var pairIndex = Math.floor(Math.random() * CONFIG.wordPairs.length);
         state.wordPair = CONFIG.wordPairs[pairIndex] || CONFIG.wordPairs[0];
+        var factionOrder = [];
+        var factionNames = ['A', 'B', 'W'];
+        for (var factionIndex = 0; factionIndex < factionNames.length; factionIndex++) {
+            var factionName = factionNames[factionIndex];
+            var factionCount = CONFIG.factionSizes[factionName] || 0;
+            for (var factionSlot = 0; factionSlot < factionCount; factionSlot++) factionOrder.push(factionName);
+        }
+        if (factionOrder.length !== shuffled.length) {
+            console.log('[血咒玩法] 阵营人数配置与 requiredPlayers 不一致');
+            return false;
+        }
+        var factionNumbers = { A: 0, B: 0, W: 0 };
         for (var i = 0; i < shuffled.length; i++) {
             var item = shuffled[i];
-            var faction = i < 3 ? 'A' : (i < 6 ? 'B' : 'W');
-            var number = faction === 'A' ? i + 1 : (faction === 'B' ? i - 2 : 0);
+            var faction = factionOrder[i];
+            factionNumbers[faction]++;
+            var number = factionNumbers[faction];
             var key = item.playerState.toString();
             var record = {
                 playerState: item.playerState,
@@ -832,6 +853,12 @@ if (mod !== null) {
     function evaluateWin() {
         if (state.phase !== 'active' || state.ending || state.pendingSelfRescue) return;
         var alive = countAlive();
+        if (CONFIG.mode === 'two_player_test') {
+            if (alive.A > 0 && alive.W === 0) return finishGame(1);
+            if (alive.A === 0 && alive.W > 0) return finishGame(3);
+            if (alive.A === 0 && alive.W === 0) return finishGame(0);
+            return;
+        }
         if (alive.A > 0 && alive.B === 0) return finishGame(1);
         if (alive.B > 0 && alive.A === 0) return finishGame(2);
         if (alive.A === 0 && alive.B === 0 && alive.W > 0) return finishGame(3);
@@ -850,7 +877,10 @@ if (mod !== null) {
             if (players.length < CONFIG.requiredPlayers) {
                 state.phase = 'waiting';
                 if (!state.waitingNoticeSent) {
-                    broadcastPlayers(players, format(CONFIG.announcement.waiting, { count: players.length }));
+                    broadcastPlayers(players, format(CONFIG.announcement.waiting, {
+                        count: players.length,
+                        required: CONFIG.requiredPlayers
+                    }));
                     state.waitingNoticeSent = true;
                 }
                 return;
@@ -996,5 +1026,5 @@ if (mod !== null) {
         console.log('[血咒玩法] Tick Hook 安装失败: ' + e);
     }
 
-    send('阵营词语血咒玩法: 已加载（固定 7 人，A/B 词语，狼人双药，血咒与早晚沉默）');
+    send('阵营词语血咒玩法: 已加载（' + CONFIG.requiredPlayers + ' 人测试/正式模式，A/B 词语，狼人双药，血咒与早晚沉默）');
 }
