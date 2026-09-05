@@ -110,7 +110,6 @@ if (mod !== null) {
                     var controllerId = ps.add(0x224).readU8();
                     var ctrl = GetPlayerController(ps, controllerId);
                     if (!ctrl.isNull()) {
-                        /* 连续推送两条 */
                         ReceiveThrallMessage(ctrl, msg1, ptr(0));
                         ReceiveThrallMessage(ctrl, msg2, ptr(0));
                         recipients++;
@@ -209,7 +208,6 @@ if (mod !== null) {
         try {
             if (pawn.isNull()) return;
 
-            /* 获取 Controller 与 PlayerState */
             var ctrl = ptr(0);
             var c1 = pawn.add(0x258).readPointer();
             var c2 = pawn.add(0x338).readPointer();
@@ -239,7 +237,6 @@ if (mod !== null) {
 
             var name = getPlayerName(ps);
 
-            /* 若已经完成放弃 */
             if (OptOutThralls[key]) {
                 var infoDone = makeFText('不当狼：5/5 (已生效：本局放弃当狼)');
                 ReceiveThrallMessage(ctrl, infoDone, ptr(0));
@@ -333,7 +330,6 @@ if (mod !== null) {
                         args[1] = ptr(0); // 强制取消当狼
                         delete ReservedThralls[key];
 
-                        /* 将名额移交给其他候选玩家 */
                         reassignThrallToCandidate(ps);
                     } else {
                         /* 记录系统已选和插件替补的狼人，后续转交不得重复选中。 */

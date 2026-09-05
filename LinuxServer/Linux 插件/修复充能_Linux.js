@@ -2,7 +2,7 @@
    当前 Linux 服务端二进制:
    - ADH_PlayerState::SpellManager = PlayerState + 0x480
    - ADH_PlayerState::ModifySpellChargeLevel(float) = base + 0x277FA90
-   不再固定等待 5 秒后直接写内存，而是等待 SpellManager 就绪后调用游戏原生函数。 */
+   等待 SpellManager 就绪后调用游戏原生函数。 */
 var mod = Process.findModuleByName('DreadHungerServer-Linux-Shipping');
 
 if (mod !== null) {

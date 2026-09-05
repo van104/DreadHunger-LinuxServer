@@ -4,7 +4,6 @@ var mod = Process.findModuleByName('DreadHungerServer-Linux-Shipping');
 if (mod !== null) {
     var base = mod.base;
 
-    /* ===== 配置区 ===== */
     var NoticeTitle = ' ';
     var RoleNamesCN = {
         'Captain': '船长', 'Cook': '厨师', 'Chaplain': '牧师', 'Doctor': '医生',
@@ -17,7 +16,6 @@ if (mod !== null) {
     var NoticePadding = 10;   // 提示后插入的空行数, 值越大提示越靠上
     var RewardConfigFile = DH_LINUX_ROOT + '/gm_winning_card_reward.json';
     var RewardPollMs = 1000;
-    /* ================== */
 
     var FName_FName = new NativeFunction(base.add(0x2B130F0), 'void', ['pointer', 'pointer', 'int8']);
     var FText_FromName = new NativeFunction(base.add(0x2A13190), 'pointer', ['pointer', 'pointer']);

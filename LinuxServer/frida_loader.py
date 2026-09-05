@@ -103,7 +103,6 @@ def check_engine_ready(root_dir: Path, pid: int, since_offsets: Optional[Dict[Pa
             with open(log_path, "rb") as f:
                 f.seek(offset)
                 data = f.read().decode("utf-8", "replace")
-            # 严格匹配引擎最终初始化完成的唯一官方标志
             if "LogLoad: (Engine Initialization)" in data:
                 return True
         except OSError:
@@ -159,14 +158,14 @@ def match_end_detected(root_dir: Path, pid: int, offsets: Dict[Path, int]) -> bo
 
 
 def wait_for_server_ready(root_dir: Path, pid: int, max_wait_sec: float = 25.0) -> None:
-    """如果服务器已就绪则立即开始注入；否则实时监测日志标志，一旦就绪立即秒连注入"""
+    """检查运行时间和初始化日志；未就绪时等待新增日志或超时。"""
     uptime = get_process_uptime(pid)
-    # 如果进程已稳定运行超过 15 秒，说明早已完成初始化，可直接秒注入
+    # 运行满 15 秒且日志已有初始化标志时，跳过新增日志等待。
     if uptime >= 15.0 and check_engine_ready(root_dir, pid):
         log("服务器已就绪，开始注入插件...")
         return
 
-    # 刚启动的服务器（运行时间 < 15 秒），记录当前日志偏移量，防止被上一局的历史旧日志误导
+    # 只等待新增日志，避免上一局的初始化标志触发本次注入。
     log_candidates = get_log_candidates(root_dir, pid)
     start_offsets = {}
     for p in log_candidates:
@@ -186,7 +185,7 @@ def wait_for_server_ready(root_dir: Path, pid: int, max_wait_sec: float = 25.0) 
         if check_engine_ready(root_dir, pid, since_offsets=start_offsets):
             elapsed = time.time() - start_time
             log("引擎已就绪 (%.1f 秒)，开始注入插件..." % elapsed)
-            time.sleep(1.5)  # 给首帧网络与地图对象 1.5 秒就绪缓冲，彻底避免 nullptr 崩溃
+            time.sleep(1.5)  # 给首帧网络与地图对象留出就绪缓冲。
             return
 
     log("等待超时 (%d 秒)，将直接尝试连接注入..." % int(max_wait_sec))
@@ -208,7 +207,6 @@ def load_plugins(root_dir: Path, plugins_dir: Path) -> None:
             time.sleep(3)
             continue
 
-        # 智能检测游戏引擎初始化状态: 已初始化立即注入，未完成则监听标志一出立即注入
         wait_for_server_ready(root_dir, pid, max_wait_sec=20.0)
 
         if find_server_pid() != pid:

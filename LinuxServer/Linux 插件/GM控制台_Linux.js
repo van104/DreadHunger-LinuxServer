@@ -1,20 +1,12 @@
-/* GM控制台: Frida 插件端
- * 
- * 功能:
- *   1. 定时轮询 gm_commands.json 读取并执行 GM 指令
- *   2. 维护在线玩家列表 -> gm_player_list.json
- *
- * 指令格式 (gm_commands.json):
+/* 与 gm_console.py 通过命令、执行结果及玩家列表文件通信。
+ * gm_commands.json 格式:
  *   { "commands": [ { "id": "uuid", "action": "end_game", "params": {...} }, ... ] }
- *
- * 配合 gm_console.py Web 面板使用。
  */
 var mod = Process.findModuleByName('DreadHungerServer-Linux-Shipping');
 
 if (mod !== null) {
     var base = mod.base;
 
-    /* ===== 配置 ===== */
     /* DH_LINUX_ROOT 由 frida_loader.py 根据实际安装目录注入 */
     var RuntimeDir       = DH_LINUX_ROOT + '/.gm_runtime';
     var CommandFile      = RuntimeDir + '/gm_commands.json';
@@ -23,9 +15,7 @@ if (mod !== null) {
     var CommandPollMs    = 1000;
     var PlayerPollMs     = 1000;
     var PendingGameThreadCommands = [];
-    /* ================ */
 
-    /* ── 游戏函数 (偏移量与现有 Linux 插件一致) ── */
     var FName_FName          = new NativeFunction(base.add(0x2B130F0), 'void',    ['pointer', 'pointer', 'int8']);
     var FText_FromName       = new NativeFunction(base.add(0x2A13190), 'pointer', ['pointer', 'pointer']);
     var ReceiveGameplayMsg   = new NativeFunction(base.add(0x282B4B0), 'void',    ['pointer', 'pointer', 'pointer', 'pointer', 'pointer']);
@@ -45,7 +35,6 @@ if (mod !== null) {
     var ADH_Warship_BP_GetSkipperLocation = new NativeFunction(base.add(0x284FEA0), ['float', 'float', 'float'], ['pointer']);
     var GWorld               = base.add(0x5C9B6D0);
 
-    /* ── 军械库密码豁免 Hook (同 Windows 插件 0xE73240，Linux 对应 0x278E6E0) ── */
     var gmArmoryUnlockedFlag = false;
     try {
         /* UDH_ArmoryLockComponent::HasCorrectCombination() const @ 0x278E6E0 */
@@ -58,7 +47,6 @@ if (mod !== null) {
         });
     } catch (eHook) {}
 
-    /* ── 玩家生命与复活函数 ── */
     var ADH_HumanCharacter_Revive         = new NativeFunction(base.add(0x2693900), 'void', ['pointer']);
     var ADH_HumanCharacter_Died           = new NativeFunction(base.add(0x269E8A0), 'void', ['pointer', 'pointer', 'pointer', 'float']);
     var ADH_PlayerState_SetIsDead         = new NativeFunction(base.add(0x277EE70), 'void', ['pointer', 'uint8']);
@@ -68,7 +56,6 @@ if (mod !== null) {
     var StaticLoadObject                  = new NativeFunction(base.add(0x2C97F00), 'pointer', ['pointer', 'pointer', 'pointer', 'pointer', 'uint32', 'pointer', 'uint8', 'pointer']);
     var UDH_InventoryManager_AddInventory = new NativeFunction(base.add(0x270CA50), 'void', ['pointer', 'pointer', 'pointer', 'pointer', 'pointer', 'uint8', 'pointer']);
 
-    /* ── 文件 IO (frida File API + libc unlink 原子删除) ── */
 
     function readFileText(path) {
         try { return File.readAllText(path); } catch (e) { return null; }
@@ -120,7 +107,6 @@ if (mod !== null) {
         }));
     }
 
-    /* ── 辅助函数 ── */
 
     function newFName(text) {
         var buf = Memory.alloc(8);
@@ -147,7 +133,6 @@ if (mod !== null) {
         } catch (e) { return null; }
     }
 
-    /* 职业映射表 */
     var RoleNames = {
         'Captain': '船长', 'Chaplain': '牧师', 'Cook': '厨子', 'Doctor': '医生',
         'Engineer': '工程', 'Hunter': '猎人', 'Marine': '枪手', 'Navigator': '导航'
@@ -321,7 +306,6 @@ if (mod !== null) {
         return result;
     }
 
-    /* 查找指定玩家 */
     function findPlayer(targetName) {
         var players = getOnlinePlayers();
         if (!targetName || targetName === '全部玩家' || targetName === 'all') return null;
@@ -390,9 +374,7 @@ if (mod !== null) {
         return { success: true, location: location };
     }
 
-    /* ── GM 操作实现 ── */
 
-    /* 发送消息 */
     function gmSendMessage(params) {
         var text = params.message || '';
         if (!text) return { success: false, error: '消息为空' };
@@ -508,7 +490,7 @@ if (mod !== null) {
         return result;
     }
 
-    /* 结束游戏: 大厅阶段先完成原生开局过渡，再走自然结算，客户端不崩溃。 */
+    /* 大厅阶段先完成原生开局过渡，再走自然结算。 */
     function gmEndGame(params) {
         var gm = getGameMode();
         var gs = getGameState();
@@ -567,14 +549,10 @@ if (mod !== null) {
         }
     }
 
-    /* 开启军械库 */
     function gmOpenArmory(params) {
-        /* 1. 设置军械库密码豁免标志: 引擎密码校验 HasCorrectCombination 永远返回 1
-         * 与 Windows 插件 0xE73240 (开局开军械库.js) 原理完全相同，Linux 对应 0x278E6E0
-         * 任何玩家转动密码轮或引擎判定时，自动触发原生开锁流程，绝不发生内存越界崩溃 */
+        /* 豁免密码校验，待玩家转动密码轮或引擎判定时触发原生开锁。 */
         gmArmoryUnlockedFlag = true;
 
-        /* 2. 广播消息通知 */
         gmSendTopMessage('军械库已开启');
 
         return {
@@ -584,7 +562,6 @@ if (mod !== null) {
         };
     }
 
-    /* 踢出玩家 */
     function gmKickPlayer(params) {
         var target = params.player;
         if (!target) return { success: false, error: '未指定玩家' };
@@ -594,7 +571,6 @@ if (mod !== null) {
         if (p.controller.isNull()) return { success: false, error: '无法获取玩家控制器' };
 
         try {
-            /* 先发通知 */
             var reason = params.reason || '被GM踢出';
             ReceiveThrallMsg(p.controller, makeFText('[GM] ' + reason), ptr(0));
 
@@ -614,7 +590,6 @@ if (mod !== null) {
         }
     }
 
-    /* 复活玩家 */
     function gmRevivePlayer(params) {
         var resolved = resolvePlayer(params);
         if (!resolved.player) return { success: false, error: resolved.error };
@@ -649,7 +624,6 @@ if (mod !== null) {
         }
     }
 
-    /* 传送回船 */
     function gmTeleportToShip(params) {
         var target = params.player || '';
         var allPlayers = target === 'all' || target === '全部玩家';
@@ -686,7 +660,6 @@ if (mod !== null) {
         }
     }
 
-    /* 传送到指定世界坐标 */
     function gmTeleportPlayer(params) {
         var resolved = resolvePlayer(params);
         if (!resolved.player) return { success: false, error: resolved.error };
@@ -849,7 +822,6 @@ if (mod !== null) {
         }
     }
 
-    /* ── 指令分发 ── */
 
     var ActionHandlers = {
         'send_message':     gmSendMessage,
@@ -915,7 +887,6 @@ if (mod !== null) {
         send({ type: 'gm_debug', error: 'GameMode Tick Hook 安装失败: ' + tickHookError });
     }
 
-    /* ── 指令轮询 ── */
 
     function processCommands() {
         try {
@@ -942,7 +913,6 @@ if (mod !== null) {
         } catch (e) { send({type:'gm_debug', error:String(e), stack:e.stack||''}); }
     }
 
-    /* ── 玩家列表更新 ── */
 
     function updatePlayerList() {
         try {
@@ -983,12 +953,10 @@ if (mod !== null) {
         } catch (e) {}
     }
 
-    /* ── 启动 ── */
 
     setInterval(processCommands, CommandPollMs);
     setInterval(updatePlayerList, PlayerPollMs);
 
-    /* 启动时立即更新一次玩家列表 */
     setTimeout(updatePlayerList, 500);
 
 }

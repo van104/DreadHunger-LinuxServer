@@ -13,7 +13,6 @@ var mod = Process.findModuleByName('DreadHungerServer-Linux-Shipping');
 if (mod !== null) {
     var base = mod.base;
 
-    /* ===== 可直接编辑的玩法参数 ===== */
     var CONFIG = {
         /* 当前先用双人测试；正式玩法改为 'seven_player' 即可恢复 7 人局。 */
         mode: 'two_player_test',

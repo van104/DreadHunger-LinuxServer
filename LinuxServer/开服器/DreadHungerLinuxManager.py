@@ -483,7 +483,6 @@ class ServerManager:
         time.sleep(0.5)
         return self.start()
 
-    # ---------- 注入器管理 ----------
 
     def _injector_pids(self) -> List[int]:
         """当前运行中的 frida 注入器进程 PID 列表"""
@@ -528,7 +527,7 @@ class ServerManager:
         return {"running": bool(pids), "pids": pids}
 
     def _start_injector(self) -> None:
-        """启动注入器（不先停止旧的; 若已有则先停止）"""
+        """停止已有注入器后启动新实例。"""
         if self._injector_pids():
             self._stop_injector()
 
@@ -951,7 +950,6 @@ class ServerManager:
             if m_remote:
                 recent_ips.append(m_remote.group(1))
 
-        # 提取登录请求 (Login requests)
         logins = []
         seen_users = set()
         ip_idx = 0
@@ -980,7 +978,6 @@ class ServerManager:
                         "joined": joined,
                     })
 
-        # 提取作弊与异常检测 (Cheat & Anomaly Detection)
         cheat_keywords = [
             "SpeedHack", "Cheat", "Fly", "TeleportSpot", "invalid attempt to read",
             "SIGSEGV", "Fatal error!", "Assertion failed", "DDoS", "Banned", "Kicked for",
@@ -998,7 +995,6 @@ class ServerManager:
         if time_stamps:
             time_range = f"{time_stamps[0]} ~ {time_stamps[-1]}"
 
-        # 格式化生成摘要文本 (严格符合摘要规范)
         summary_lines = []
         summary_lines.append("摘要")
         summary_lines.append("作弊总结:")
@@ -1086,7 +1082,6 @@ def html_page() -> str:
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Dread Hunger Linux 开服管理器</title>
-<!-- Element Plus & Dark Theme CSS -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/element-plus/dist/index.css" />
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/element-plus/theme-chalk/dark/css-vars.css" />
 <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
@@ -1108,7 +1103,6 @@ body{
 }
 #app{max-width:1440px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
 
-/* Header */
 .header-card{
   background:#0f1721;border:1px solid #1e2e3d;border-radius:10px;padding:12px 18px;
   display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;
@@ -1131,7 +1125,6 @@ body{
   font:11px/1.4 "Cascadia Mono",Consolas,monospace;color:#8fa7b8;word-break:break-all;max-height:75px;overflow-y:auto;
 }
 
-/* Terminal Log Box */
 .terminal-box {
   background: #060a0f;
   border: 1px solid #162330;
@@ -1163,7 +1156,6 @@ body{
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9), 0 0 30px rgba(14, 165, 233, 0.3);
 }
 
-/* Custom Scrollbar for terminal-box */
 .terminal-box::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -1191,7 +1183,6 @@ body{
   padding: 14px 16px !important;
 }
 
-/* Fullscreen Login Page */
 .login-wrapper {
   min-height: calc(100vh - 32px);
   display: flex;
@@ -1286,7 +1277,6 @@ body{
 </head>
 <body>
 <div id="app" v-cloak>
-  <!-- Fullscreen Login View (When Not Logged In) -->
   <div v-if="!isLoggedIn" class="login-wrapper">
     <div class="login-card">
       <div class="login-header">
@@ -1326,12 +1316,9 @@ body{
     </div>
   </div>
 
-  <!-- Main Dashboard View (When Logged In) -->
   <div v-else style="display:flex;flex-direction:column;gap:14px">
-    <!-- Fullscreen Backdrop if active -->
     <div v-if="isLogFullscreen" class="fullscreen-mask" @click="isLogFullscreen = false"></div>
 
-    <!-- Header Bar -->
     <div class="header-card">
       <div class="header-brand">
         <h1>
@@ -1358,9 +1345,7 @@ body{
       </div>
     </div>
 
-    <!-- Upper Grid: Status & Game Config -->
     <el-row :gutter="14">
-      <!-- Server Status Column -->
       <el-col :xs="24" :sm="24" :md="8" :lg="8">
         <el-card shadow="hover">
           <template #header>
@@ -1398,7 +1383,6 @@ body{
         </el-card>
       </el-col>
 
-      <!-- Game Configuration Column -->
       <el-col :xs="24" :sm="24" :md="16" :lg="16">
         <el-card shadow="hover">
           <template #header>
@@ -1480,9 +1464,7 @@ body{
       </el-col>
     </el-row>
 
-    <!-- Lower Grid: Unified Tabbed Logs & Plugins Management -->
     <el-row :gutter="14">
-      <!-- Log Console Column -->
       <el-col :xs="24" :sm="24" :md="14" :lg="14">
         <el-card shadow="hover">
           <template #header>
@@ -1502,7 +1484,6 @@ body{
                 </el-radio-button>
               </el-radio-group>
 
-              <!-- Log Actions Toolbar (Visible on server/injector tabs) -->
               <div v-if="activeLogTab !== 'saved_logs'" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
                 <el-input v-model="logFilter" :prefix-icon="Search" placeholder="过滤..." clearable size="small" style="width:100px" />
                 <el-select v-model="tailLines" size="small" style="width:80px" @change="refreshLogs">
@@ -1528,7 +1509,6 @@ body{
                 </el-tooltip>
               </div>
 
-              <!-- Saved Logs Toolbar (Visible on saved_logs tab) -->
               <div v-else style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
                 <el-button size="small" :icon="Refresh" @click="fetchSavedLogs">刷新</el-button>
                 <el-button size="small" :icon="CopyDocument" :disabled="!analysisResult" @click="copyAnalysisSummary">复制摘要</el-button>
@@ -1536,7 +1516,6 @@ body{
             </div>
           </template>
 
-          <!-- Saved Logs Analysis View -->
           <div v-if="activeLogTab === 'saved_logs'" style="min-height:330px">
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
               <el-select v-model="selectedSavedLog" placeholder="选择 Saved/Logs 历史日志文件..." style="flex:1;min-width:200px" size="small" @change="doAnalyzeLog">
@@ -1556,7 +1535,6 @@ body{
             </div>
 
             <div v-else style="display:flex;flex-direction:column;gap:10px">
-              <!-- Cheat Summary Badge -->
               <el-alert
                 :title="analysisResult.cheats_count === 0 ? '作弊总结: 未发现作弊者' : ('作弊总结: 发现 ' + analysisResult.cheats_count + ' 条异常/可疑行为')"
                 :type="analysisResult.cheats_count === 0 ? 'success' : 'warning'"
@@ -1564,7 +1542,6 @@ body{
                 show-icon
               />
 
-              <!-- Logins List -->
               <div style="background:#080e16;border:1px solid #162434;border-radius:6px;padding:8px 12px">
                 <div style="font-size:12px;font-weight:600;color:#38bdf8;margin-bottom:6px;display:flex;align-items:center;gap:6px">
                   <el-icon><User /></el-icon>
@@ -1584,17 +1561,14 @@ body{
                 </div>
               </div>
 
-              <!-- Summary Text Output -->
               <div class="cmd-box" style="max-height:110px;font-size:11px;line-height:1.45;color:#c9d8e6;white-space:pre-wrap">{{ analysisResult.summary_text }}</div>
             </div>
           </div>
 
-          <!-- Server / Injector Terminal View -->
           <div v-else :class="['terminal-box', isLogCollapsed ? 'collapsed' : '', isLogFullscreen ? 'fullscreen' : '']" ref="logPreRef" @scroll="onLogScroll">{{ filteredLog }}</div>
         </el-card>
       </el-col>
 
-      <!-- Plugins Table Column -->
       <el-col :xs="24" :sm="24" :md="10" :lg="10">
         <el-card shadow="hover">
           <template #header>
@@ -1653,9 +1627,7 @@ body{
       </el-col>
     </el-row>
 
-    <!-- Plugin Code Editor Dialog -->
     <el-dialog v-model="showEditorDialog" :title="'📝 编辑插件: ' + editingPatchName" width="75%" top="3vh" :close-on-click-modal="false">
-      <!-- Top Action Bar -->
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;background:#141e2b;padding:8px 12px;border-radius:6px;border:1px solid #1f3042;flex-wrap:wrap;gap:8px">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <el-tag size="small" type="primary">{{ editingPatchName }}</el-tag>
@@ -1730,13 +1702,11 @@ const app = createApp({
     const isLogFullscreen = ref(false);
     const logPreRef = ref(null);
 
-    // Code Editor State
     const showEditorDialog = ref(false);
     const editingPatchName = ref('');
     const editorContent = ref('');
     const isSaving = ref(false);
 
-    // Saved Logs State
     const savedLogsList = ref([]);
     const selectedSavedLog = ref('');
     const isAnalyzing = ref(false);

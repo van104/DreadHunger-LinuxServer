@@ -24,7 +24,6 @@ var mod = Process.findModuleByName('DreadHungerServer-Linux-Shipping');
 if (mod !== null) {
     var base = mod.base;
 
-    /* ===== 训练参数 ===== */
     var TrainingPosition = { x: 4434.21, y: 6397.93, z: 7297.65 };
     var NitroRefreshPosition = { x: 4434.21, y: 6397.93, z: 7347.65 };
     var ShipPosition = { x: 3942.55, y: 171.26, z: 99.9 };
@@ -42,7 +41,6 @@ if (mod !== null) {
     var NitroPickupClassPath = '/Game/Blueprints/Environment/Nitro/BP_Nitro_Pickup.BP_Nitro_Pickup_C';
     var NitroInventoryClassPath = '/Game/Blueprints/Environment/Nitro/BP_Nitro_Inventory.BP_Nitro_Inventory_C';
     var SpiritWalkClassPath = '/Game/Blueprints/Game/Totems/TS_SpiritWalk.TS_SpiritWalk_C';
-    /* ==================== */
 
     var GWorld = base.add(0x5C9B6D0);
     var ADH_GameMode_HasMatchStarted = new NativeFunction(base.add(0x26C6160), 'uint8', ['pointer']);

@@ -1,11 +1,6 @@
 /*
-   随机职业 Plus（跳过选人版）
-
-   功能:
-   1. 玩家进入服务器时，由服务端立即随机分配职业。
-   2. 在 HandleStartingNewPlayer 检查 SelectedRole 之前完成分配，直接跳过选人界面。
-   3. 同一局 8 个职业不重复，同一玩家锁定首次随机结果。
-   4. 客户端即使再次提交职业，也会被替换为服务端已分配的结果。
+   在 HandleStartingNewPlayer 检查 SelectedRole 前分配职业，跳过选人界面。
+   同局职业不重复；锁定首次分配结果，覆盖客户端后续提交。
 
    当前 Linux 服务端二进制:
    - ADH_GameMode::HandleStartingNewPlayer_Implementation = base + 0x26CB970

@@ -927,9 +927,7 @@ class QuickJoinApp:
             return False
         if len(message) > 500:
             raise ValueError("公告内容最多 500 个字符。")
-        # This is deliberately the only message-send path.  It is also used
-        # by the visible “立即发布公告” button, which is confirmed to work in
-        # the user's lobby.
+        # Manual and automatic announcements share this message-send path.
         send_client_announcement(message)
         self.announcement_status_var.set("公告已发布到本机左侧狼人通道")
         return True
@@ -945,8 +943,6 @@ class QuickJoinApp:
             return False
         trace_quick_join("notice-send text=%s" % clean)
         try:
-            # Reuse the exact path used by “立即发布公告”; do not maintain a
-            # separate automatic-send implementation.
             self._send_current_announcement(require_enabled=False, text=clean)
         except (OSError, ValueError):
             trace_quick_join("notice-failed")

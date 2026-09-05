@@ -134,7 +134,6 @@ ITEM_CATALOG = [
 ]
 ITEM_BY_ID = {entry["id"]: entry for entry in ITEM_CATALOG}
 
-# ── 工具 ──
 
 def now_text() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -868,7 +867,6 @@ class GMConsole:
         }
 
 
-# ── HTML 页面 ──
 
 def app_html() -> str:
     return r'''<!doctype html>
@@ -877,10 +875,8 @@ def app_html() -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dread Hunger Linux GM 控制台</title>
-  <!-- Element Plus Dark CSS & Font -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/element-plus@2.8.0/dist/index.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/element-plus@2.8.0/theme-chalk/dark/css-vars.css">
-  <!-- Vue 3 & Element Plus JS -->
   <script src="https://cdn.jsdelivr.net/npm/vue@3.4.38/dist/vue.global.prod.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/element-plus@2.8.0/dist/index.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@element-plus/icons-vue@2.3.1/dist/index.iife.min.js"></script>
@@ -917,7 +913,6 @@ def app_html() -> str:
     }
     [v-cloak] { display: none !important; }
 
-    /* Element Plus Tabs & Form Dark Overrides */
     .el-tabs--border-card {
       background: #0b131e !important;
       border: 1px solid #1a2c42 !important;
@@ -991,7 +986,6 @@ def app_html() -> str:
       color: #cbd5e1 !important;
     }
 
-    /* Fullscreen Login Page */
     .login-wrapper {
       min-height: 100vh;
       display: flex;
@@ -1089,7 +1083,6 @@ def app_html() -> str:
       border-radius: 4px;
     }
 
-    /* Dashboard Layout */
     .dashboard-wrapper {
       max-width: 1280px;
       margin: 0 auto;
@@ -1249,7 +1242,6 @@ def app_html() -> str:
 </head>
 <body class="dark">
 <div id="app" v-cloak>
-  <!-- 1. Fullscreen Modern Login View (When Not Authenticated) -->
   <div v-if="!isLoggedIn" class="login-wrapper">
     <div class="login-card">
       <div class="login-header">
@@ -1289,9 +1281,7 @@ def app_html() -> str:
     </div>
   </div>
 
-  <!-- 2. Dashboard View (Only Rendered When Authenticated) -->
   <div v-else class="dashboard-wrapper">
-    <!-- Top Navigation Bar -->
     <div class="top-header">
       <div class="brand-title">
         <el-icon :size="20"><Compass /></el-icon>
@@ -1316,9 +1306,7 @@ def app_html() -> str:
       </div>
     </div>
 
-    <!-- Main Grid -->
     <el-row :gutter="16">
-      <!-- Left Column: Online Players & Fast Selector -->
       <el-col :xs="24" :sm="24" :md="8" :lg="8">
         <el-card shadow="hover">
           <template #header>
@@ -1378,7 +1366,6 @@ def app_html() -> str:
           </div>
         </el-card>
 
-        <!-- Command Quick Notes -->
         <el-card shadow="hover">
           <template #header>
             <div style="display:flex;align-items:center;gap:6px;font-weight:600">
@@ -1395,7 +1382,6 @@ def app_html() -> str:
         </el-card>
       </el-col>
 
-      <!-- Right Column: GM Operations & Result Logs -->
       <el-col :xs="24" :sm="24" :md="16" :lg="16">
         <el-card shadow="hover">
           <template #header>
@@ -1406,7 +1392,6 @@ def app_html() -> str:
           </template>
 
           <el-tabs v-model="activeTab" type="border-card">
-            <!-- Tab 0: 狼人名单 -->
             <el-tab-pane name="thralls">
               <template #label>
                 <span>
@@ -1417,7 +1402,6 @@ def app_html() -> str:
               </template>
 
               <div style="padding:4px 0">
-                <!-- Status Banner -->
                 <div v-if="thrallList.length > 0" class="thrall-hero-banner has-thralls">
                   <div style="display:flex;align-items:center;gap:12px">
                     <span style="font-size:26px">🩸</span>
@@ -1442,7 +1426,6 @@ def app_html() -> str:
                   <el-button size="small" :icon="Refresh" @click="fetchPlayers">手动刷新</el-button>
                 </div>
 
-                <!-- Thrall Cards List -->
                 <div v-if="thrallList.length > 0">
                   <div style="font-size:13px;font-weight:700;color:#ff7875;margin-bottom:12px;display:flex;align-items:center;gap:6px">
                     <span>🩸 狼人阵容 (共 {{ thrallList.length }} 人)</span>
@@ -1472,7 +1455,6 @@ def app_html() -> str:
                   </div>
                 </div>
 
-                <!-- Explorer List Section -->
                 <div style="margin-top:16px">
                   <div style="border:1px solid #1a2c42;background:#0c141f;border-radius:8px;padding:12px 14px">
                     <div style="font-size:13px;font-weight:600;color:#38bdf8;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">
@@ -1499,7 +1481,6 @@ def app_html() -> str:
                   </div>
                 </div>
 
-                <!-- Quick Match Control -->
                 <div style="margin-top:16px;padding:14px 16px;border:1px solid #1a2c42;background:#0c141f;border-radius:8px">
                   <div style="font-size:13px;font-weight:600;margin-bottom:10px;color:#e2ebf3">⚡ 阵营对局快捷控制</div>
                   <div style="display:flex;gap:10px;flex-wrap:wrap">
@@ -1512,7 +1493,6 @@ def app_html() -> str:
               </div>
             </el-tab-pane>
 
-            <!-- Tab 1: 发送消息 -->
             <el-tab-pane name="msg">
               <template #label>
                 <span><el-icon style="vertical-align:middle;margin-right:2px"><ChatDotRound /></el-icon> 发送消息</span>
@@ -1538,7 +1518,6 @@ def app_html() -> str:
               </el-form>
             </el-tab-pane>
 
-            <!-- Tab 2: 结束游戏 -->
             <el-tab-pane name="end">
               <template #label>
                 <span><el-icon style="vertical-align:middle;margin-right:2px"><Trophy /></el-icon> 结束游戏</span>
@@ -1558,7 +1537,6 @@ def app_html() -> str:
               </div>
             </el-tab-pane>
 
-            <!-- Tab 3: 开启军械库 -->
             <el-tab-pane name="armory">
               <template #label>
                 <span><el-icon style="vertical-align:middle;margin-right:2px"><Key /></el-icon> 开启军械库</span>
@@ -1569,7 +1547,6 @@ def app_html() -> str:
               </div>
             </el-tab-pane>
 
-            <!-- Tab 4: 踢出玩家 -->
             <el-tab-pane name="kick">
               <template #label>
                 <span><el-icon style="vertical-align:middle;margin-right:2px"><RemoveFilled /></el-icon> 踢出玩家</span>
@@ -1587,7 +1564,6 @@ def app_html() -> str:
               </el-form>
             </el-tab-pane>
 
-            <!-- Tab 5: 复活玩家 -->
             <el-tab-pane name="revive">
               <template #label>
                 <span><el-icon style="vertical-align:middle;margin-right:2px"><FirstAidKit /></el-icon> 复活玩家</span>
@@ -1602,7 +1578,6 @@ def app_html() -> str:
               </el-form>
             </el-tab-pane>
 
-            <!-- Tab 6: 传送回船 -->
             <el-tab-pane name="teleport">
               <template #label>
                 <span><el-icon style="vertical-align:middle;margin-right:2px"><LocationFilled /></el-icon> 坐标传送</span>
@@ -1648,7 +1623,6 @@ def app_html() -> str:
               </el-form>
             </el-tab-pane>
 
-            <!-- Tab 7: 实时发送物品 -->
             <el-tab-pane name="items">
               <template #label>
                 <span><el-icon style="vertical-align:middle;margin-right:2px"><Box /></el-icon> 发送物品</span>
@@ -1679,7 +1653,6 @@ def app_html() -> str:
               </el-form>
             </el-tab-pane>
 
-            <!-- Tab 8: 赢牌奖励 -->
             <el-tab-pane name="card-reward">
               <template #label>
                 <span><el-icon style="vertical-align:middle;margin-right:2px"><Trophy /></el-icon> 赢牌奖励</span>
@@ -1724,7 +1697,6 @@ def app_html() -> str:
               </el-form>
             </el-tab-pane>
 
-            <!-- Tab 9: 处决玩家 -->
             <el-tab-pane name="execute">
               <template #label>
                 <span style="color:#f56c6c"><el-icon style="vertical-align:middle;margin-right:2px"><WarningFilled /></el-icon> 处决玩家</span>
@@ -1740,7 +1712,6 @@ def app_html() -> str:
               </el-form>
             </el-tab-pane>
 
-            <!-- Tab 9: 黑名单管理 -->
             <el-tab-pane name="blacklist">
               <template #label>
                 <span><el-icon style="vertical-align:middle;margin-right:2px"><RemoveFilled /></el-icon> 黑名单</span>
@@ -1789,7 +1760,6 @@ def app_html() -> str:
           </el-tabs>
         </el-card>
 
-        <!-- Result Output Box -->
         <el-card shadow="hover">
           <template #header>
             <div style="display:flex;justify-content:space-between;align-items:center">
@@ -2606,7 +2576,6 @@ app.use(ElementPlus,{locale:ElementPlusLocaleZhCn});for(const [key,c] of Object.
 </body></html>'''
 
 
-# ── HTTP Handler ──
 
 def make_handler(console: GMConsole):
     class Handler(BaseHTTPRequestHandler):
@@ -2669,14 +2638,12 @@ def make_handler(console: GMConsole):
             raw = self.read_body()
             if not raw:
                 return {}
-            # 优先尝试 JSON
             try:
                 data = json.loads(raw.decode("utf-8", "replace"))
                 if isinstance(data, dict):
                     return data
             except Exception:
                 pass
-            # 其次尝试 form-urlencoded
             try:
                 from urllib.parse import parse_qs
                 qs = parse_qs(raw.decode("utf-8", "replace"))
@@ -2842,7 +2809,6 @@ def make_handler(console: GMConsole):
     return Handler
 
 
-# ── Main ──
 
 class GMHTTPServer(ThreadingHTTPServer):
     request_queue_size = 64

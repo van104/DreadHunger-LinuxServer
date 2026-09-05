@@ -13,7 +13,6 @@ var mod = Process.findModuleByName('DreadHungerServer-Linux-Shipping');
 if (mod !== null) {
     var base = mod.base;
 
-    // ── 核心引擎与游戏函数 ──
     var FActorSpawnParametersCtor = new NativeFunction(base.add(0x478C420), 'void', ['pointer']);
     var UWorld_SpawnActor = new NativeFunction(base.add(0x43EDEE0), 'pointer', ['pointer', 'pointer', 'pointer', 'pointer']);
     var StaticFindObject = new NativeFunction(base.add(0x2C95CA0), 'pointer', ['pointer', 'pointer', 'pointer', 'int8']);
@@ -21,7 +20,6 @@ if (mod !== null) {
     var UDH_GameInstance_GetInstance = new NativeFunction(base.add(0x26BF1A0), 'pointer', ['pointer']);
     var ADH_GameMode_HasMatchStarted = new NativeFunction(base.add(0x26C6160), 'uint8', ['pointer']);
 
-    // ADH_SpellManager 成员函数
     var ADH_SpellManager_SetEquippedSpells = new NativeFunction(base.add(0x27A75D0), 'void', ['pointer', 'pointer']);
     var ADH_SpellManager_SetSpellChargeTier = new NativeFunction(base.add(0x27A7AA0), 'void', ['pointer', 'int8']);
     var ADH_SpellManager_CastSpell = new NativeFunction(base.add(0x27A6D00), 'pointer', ['pointer', 'pointer', 'pointer']);
@@ -32,7 +30,6 @@ if (mod !== null) {
     var FTransform_Identity = base.add(0x5A90730);
     var GWorld = base.add(0x5C9B6D0);
 
-    // ── 辅助函数 ──
 
     function findClassByName(className) {
         try {
@@ -85,7 +82,6 @@ if (mod !== null) {
     }
 
     function getHushSpellClass(gameInstance) {
-        // 双通道解析:
         // 通道 1: 从 GameInstance.ThrallSpells (0x440) 直接读取第5个法术 (TS_Hush)
         try {
             if (gameInstance && !gameInstance.isNull()) {
@@ -122,7 +118,6 @@ if (mod !== null) {
             var spellManager = spawnActor(world, spellManagerClass, FTransform_Identity, gameState);
             if (spellManager.isNull()) return false;
 
-            // 装备技能
             var thrallSpells = gameInstance.add(0x440);
             ADH_SpellManager_SetEquippedSpells(spellManager, thrallSpells);
 
@@ -139,7 +134,6 @@ if (mod !== null) {
         }
     }
 
-    // ── 触发与生命周期管理 ──
     var MatchSequence = 0;
     var MatchActive = false;
     var SilenceApplied = false;

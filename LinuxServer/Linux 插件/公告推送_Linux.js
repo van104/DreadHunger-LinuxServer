@@ -1,9 +1,5 @@
 /*
-========================================
- 公告推送插件 (Linux 服务端)
- 模拟 GM 控制台的发送功能, 从 gm_announce.json 读取消息
- 使用 ReceiveGameplayMessage (居中顶部显示, 与 GM 控制台一致)
-========================================
+ 使用 ReceiveGameplayMessage 在居中顶部显示公告。
  配置文件: gm_announce.json
  格式: { "message": "消息内容(支持\\n换行)", "interval": 10, "repeat": 3, "delay": 10 }
 */
@@ -13,16 +9,13 @@ var base = Process.findModuleByName('DreadHungerServer-Linux-Shipping').base;
 /* DH_LINUX_ROOT 由 frida_loader.py 根据实际安装目录注入 */
 var AnnounceFile = DH_LINUX_ROOT + '/GM控制台/gm_announce.json';
 var PollIntervalSec = 2;        // 检测新玩家间隔(秒)
-/* ============================ */
 
-/* ===== 偏移表 (Linux) ===== */
 var FName_FName = new NativeFunction(base.add(0x2B130F0), 'void', ['pointer', 'pointer', 'int8']);
 var FText_FromName = new NativeFunction(base.add(0x2A13190), 'pointer', ['pointer', 'pointer']);
 var UGameplayStatics_GetPlayerController = new NativeFunction(base.add(0x433C920), 'pointer', ['pointer', 'int32']);
 var ReceiveGameplayMsg = new NativeFunction(base.add(0x282B4B0), 'void', ['pointer', 'pointer', 'pointer', 'pointer', 'pointer']);
 var GWorld = base.add(0x5C9B6D0);
 
-/* ===== libc unlink (原子删除) ===== */
 var _unlinkPtr = null;
 try {
     var mods = Process.enumerateModules();
@@ -61,7 +54,6 @@ function getGameState() {
     return GameMode.add(0x280).readPointer();
 }
 
-/* 读取公告配置文件 */
 function readAnnounceConfig() {
     try {
         var text = File.readAllText(AnnounceFile);
@@ -80,7 +72,6 @@ function sendMessageToPlayer(PC, message) {
     } catch (e) { /* 玩家状态不稳, 跳过 */ }
 }
 
-/* 发送消息给所有在线玩家 */
 function sendMessageToAll(message) {
     if (!message) return 0;
     var GameState = getGameState();
@@ -103,7 +94,6 @@ function sendMessageToAll(message) {
     return count;
 }
 
-// 玩家是否还在线
 function isPlayerOnline(PS) {
     try {
         var GameState = getGameState();
@@ -146,7 +136,6 @@ function announceToPlayer(PC, PS) {
     }, delay);
 }
 
-// 轮询检测新玩家进入
 setInterval(function () {
     var GameState = getGameState();
     if (GameState.isNull()) return;
@@ -167,7 +156,6 @@ setInterval(function () {
         if (PC.isNull()) continue;
         announceToPlayer(PC, PS);
     }
-    // 清理已离开玩家
     for (var k in KnownPlayers) {
         if (!online[k]) delete KnownPlayers[k];
     }
