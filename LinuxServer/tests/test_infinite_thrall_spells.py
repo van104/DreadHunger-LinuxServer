@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 LINUX_SERVER_ROOT = Path(__file__).resolve().parents[1]
-PLUGIN_PATH = LINUX_SERVER_ROOT / "Linux 插件" / "狼人无限技能_Linux.js"
+PLUGIN_PATH = LINUX_SERVER_ROOT / "Linux 插件" / "[服务端]狼人无限技能_Linux.js"
 
 
 NODE_HARNESS = r"""

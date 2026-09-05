@@ -5,8 +5,8 @@ from pathlib import Path
 
 
 LINUX_SERVER_ROOT = Path(__file__).resolve().parents[1]
-SINGLE_PLUGIN_PATH = LINUX_SERVER_ROOT / "Linux 插件" / "单人山顶飞天甘油训练.js.disabled"
-MULTIPLAYER_PLUGIN_PATH = LINUX_SERVER_ROOT / "Linux 插件" / "多人山顶飞天甘油训练.js"
+SINGLE_PLUGIN_PATH = LINUX_SERVER_ROOT / "Linux 插件" / "[服务端]单人山顶飞天甘油训练.js.disabled"
+MULTIPLAYER_PLUGIN_PATH = LINUX_SERVER_ROOT / "Linux 插件" / "[服务端]多人山顶飞天甘油训练.js"
 
 
 NODE_HARNESS = r"""

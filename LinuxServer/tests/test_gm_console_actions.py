@@ -322,7 +322,7 @@ class GMActionTests(unittest.TestCase):
 
 class GMPluginSourceTests(unittest.TestCase):
     def test_native_addresses_and_actions_are_registered(self):
-        source = (LINUX_SERVER_ROOT / "Linux 插件" / "GM控制台_Linux.js").read_text(encoding="utf-8")
+        source = (LINUX_SERVER_ROOT / "Linux 插件" / "[服务端]GM控制台_Linux.js").read_text(encoding="utf-8")
         self.assertNotIn("controller.add(0x258).readPointer()", source)
         self.assertNotIn("base.add(0x2D6FA10)", source)
         self.assertIn("base.add(0x40A0430)", source)
@@ -346,7 +346,7 @@ class GMPluginSourceTests(unittest.TestCase):
 
     def test_winning_card_reward_ui_and_plugin_are_connected(self):
         console_source = (LINUX_SERVER_ROOT / "GM控制台" / "gm_console.py").read_text(encoding="utf-8")
-        plugin_source = (LINUX_SERVER_ROOT / "Linux 插件" / "赢牌对家开船_Linux.js").read_text(encoding="utf-8")
+        plugin_source = (LINUX_SERVER_ROOT / "Linux 插件" / "[服务端]赢牌对家开船_Linux.js").read_text(encoding="utf-8")
         self.assertIn('name="card-reward"', console_source)
         self.assertNotIn('label="随机在线玩家"', console_source)
         self.assertIn('<el-radio-button label="fixed">固定奖励（全部发放）</el-radio-button>', console_source)

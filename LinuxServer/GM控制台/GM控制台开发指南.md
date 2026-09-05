@@ -1,6 +1,6 @@
 # Dread Hunger Linux GM 控制台 — 插件开发指南
 
-> 基于 Frida 注入 `GM控制台_Linux.js`，与 `gm_console.py` Web 面板配合使用。
+> 基于 Frida 注入 `[服务端]GM控制台_Linux.js`，与 `gm_console.py` Web 面板配合使用。
 > 游戏二进制：`DreadHungerServer-Linux-Shipping`（2024-01-25，non-PIE ELF EXEC）
 
 ---

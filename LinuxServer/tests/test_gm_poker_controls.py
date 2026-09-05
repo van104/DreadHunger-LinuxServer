@@ -3,7 +3,7 @@ import unittest
 
 
 LINUX_SERVER_ROOT = Path(__file__).resolve().parents[1]
-PLUGIN_PATH = LINUX_SERVER_ROOT / "Linux 插件" / "GM控制台_Linux.js"
+PLUGIN_PATH = LINUX_SERVER_ROOT / "Linux 插件" / "[服务端]GM控制台_Linux.js"
 CONSOLE_PATH = LINUX_SERVER_ROOT / "GM控制台" / "gm_console.py"
 
 

@@ -1375,7 +1375,7 @@ def app_html() -> str:
           </template>
           <div style="font-size:12.5px;color:#8fa7b8;line-height:1.7">
             <p>• 控制台将指令安全写入 <code>gm_commands.json</code></p>
-            <p>• 服务端 <code>GM控制台_Linux.js</code> Frida 插件每秒自动轮询并无缝执行指令</p>
+            <p>• 服务端 <code>[服务端]GM控制台_Linux.js</code> Frida 插件每秒自动轮询并无缝执行指令</p>
             <p>• 坐标与玩家状态每秒刷新，原生动作会回传真实执行结果</p>
             <p>• 支持消息、判胜、开库、踢人、复活、传送、发物品及处决</p>
           </div>

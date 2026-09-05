@@ -5,7 +5,7 @@
 | 文件 | 位置 | 用途 |
 |------|------|------|
 | `gm_console.py` | LinuxServer/GM控制台/ | Web 面板服务，提供浏览器操作界面 |
-| `GM控制台_Linux.js` | LinuxServer/Linux 插件/ | Frida 插件，在游戏进程内执行 GM 操作 |
+| `[服务端]GM控制台_Linux.js` | LinuxServer/Linux 插件/ | Frida 插件，在游戏进程内执行 GM 操作 |
 
 运行时自动生成的文件：
 
@@ -32,7 +32,7 @@ LinuxServer/
 │   ├── gm_console.py
 │   └── gm_console.sh
 ├── Linux 插件/
-│   ├── GM控制台_Linux.js            ← 上传到这里
+│   ├── [服务端]GM控制台_Linux.js            ← 上传到这里
 │   ├── 黑名单_Linux.js              (已有)
 │   ├── 系统公告_Linux.js            (已有)
 │   └── ...
@@ -48,7 +48,7 @@ LinuxServer/
 ### 3. 启动 Frida 注入器
 
 如果你用的是 `DreadHungerLinuxManager.py`，点"重启注入器"即可。
-`frida_loader.py` 会自动扫描 `Linux 插件/` 目录并注入 `GM控制台_Linux.js`。
+`frida_loader.py` 会自动扫描 `Linux 插件/` 目录并注入 `[服务端]GM控制台_Linux.js`。
 
 手动启动：
 ```bash
@@ -57,7 +57,7 @@ python3 frida_loader.py --root /path/to/LinuxServer
 
 看到以下日志说明 GM 插件加载成功：
 ```
-[HH:MM:SS] 已注入: GM控制台_Linux.js
+[HH:MM:SS] 已注入: [服务端]GM控制台_Linux.js
 [HH:MM:SS] {"type":"gm_console","action":"loaded","message":"GM控制台插件已加载"}
 ```
 
@@ -218,7 +218,7 @@ ufw allow 9900/tcp
 
 1. **启动顺序**：先启动游戏服务器 → 再启动 Frida 注入器 → 最后启动 GM 控制台
 2. **密码安全**：默认密码是 `admin`，生产环境务必修改
-3. **偏移量版本**：GM 插件中的内存偏移量与现有 Linux 插件一致。如果游戏更新导致偏移变化，需要同步更新 `GM控制台_Linux.js` 中的地址
+3. **偏移量版本**：GM 插件中的内存偏移量与现有 Linux 插件一致。如果游戏更新导致偏移变化，需要同步更新 `[服务端]GM控制台_Linux.js` 中的地址
 4. **端口冲突**：9900 端口不能被其他服务占用。管理器默认用 8800，游戏默认用 9100，不会冲突
 5. **执行结果**：Web 请求最多等待 3 秒；原生成功/失败会显示真实结果，超过 3 秒显示 `queued`，不再把“已写入命令文件”当作执行成功
 6. **刷新频率**：玩家状态、坐标和 Frida 命令轮询均为约 1 秒
@@ -233,5 +233,5 @@ ufw allow 9900/tcp
 | 登录后显示空白 | 清浏览器缓存，或换浏览器试试 |
 | 在线玩家显示 0 | 检查 Frida 注入器是否正常运行；检查注入器日志有没有报错 |
 | 操作没有效果 | 查看 `frida_loader.log` 中 GM 插件的输出；确认游戏服务器正在运行 |
-| 指令显示“已排队” | 3 秒内没有收到结果；检查注入器是否加载 `GM控制台_Linux.js`、`.gm_runtime/gm_results` 是否可写 |
+| 指令显示“已排队” | 3 秒内没有收到结果；检查注入器是否加载 `[服务端]GM控制台_Linux.js`、`.gm_runtime/gm_results` 是否可写 |
 | 指令显示原生执行失败 | 按页面返回的明确错误排查，例如玩家已离线、无 Pawn、背包已满或 Mod PAK 未装载 |
