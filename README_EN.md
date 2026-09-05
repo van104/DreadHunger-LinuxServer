@@ -146,12 +146,14 @@ git push origin v1.0.0
 
 ## License and Noncommercial Use
 
-Original code, documentation, and assets that the licensor has authority to license are covered by the project-specific **Dread Hunger Toolkit Noncommercial License 1.0**. See [LICENSE](LICENSE) for the controlling English terms. This is a source-available noncommercial license, not an OSI-defined open-source license or the standard PolyForm license.
+Original code, documentation, and assets that the licensor has authority to license are covered by **PolyForm Noncommercial License 1.0.0**. [LICENSE](LICENSE) preserves the [official English terms](https://polyformproject.org/licenses/noncommercial/1.0.0) unchanged and appends this project's `Required Notice:` copyright notice. This is a source-available noncommercial license, not an OSI-defined open-source license. The following summary does not add to, remove, or replace the license terms.
 
-- Permitted: personal study, research, modification, and free community servers and redistribution that meet the noncommercial conditions.
-- Prohibited: selling code or binaries, paid servers, VIP access, paid items or slots, paid deployment or administration using the Work, business operations, and advertising, sponsorship, or promotional monetization of services using it. Modification, renaming, compiling into an EXE, or offering only an online service does not bypass these restrictions.
-- Payments called donations, shared costs, or reimbursements are not allowed when tied to access, priority, or other benefits. Truly voluntary donations to a noncommercial community project without anything in return are permitted. Paying for infrastructure to run an otherwise noncommercial server is not itself prohibited.
-- Distributions of source, modifications, and binaries must include the complete license, retain copyright and third-party notices, and identify modifications. Nonprofit or educational status does not automatically exempt commercial use.
+- Noncommercial use, modification, and distribution under the terms are permitted, including personal study, experimentation, private entertainment, and hobby projects without any anticipated commercial application.
+- Ordinary individuals or companies selling tools, operating paid servers, selling VIP access, providing paid deployment, or monetizing through advertising generally engage in commercial use outside the general noncommercial permission. Assess each use against the complete terms; modification or compilation does not itself grant commercial rights.
+- The official terms expressly permit use by charitable organizations, educational institutions, public research organizations, public safety or health organizations, environmental protection organizations, and government institutions regardless of funding sources or resulting obligations. This is not a blanket commercial-use prohibition for every entity.
+- Anyone receiving any part of the software must also receive the terms or their URL and all `Required Notice:` lines supplied by the licensor. Third-party materials retain their own license requirements.
+- Following the first written violation notice, licenses can continue if the recipient comes into full compliance and takes practical steps to correct past violations within 32 days; otherwise, licenses end as specified in the Violations clause.
+- Donations, cost sharing, and sponsorship require assessment of the actual purpose and full terms; this summary creates no separate blanket permission or prohibition.
 
 The game, Frida, Python, and other third-party components retain their own licenses; this project cannot grant rights on their behalf. Contributors should confirm their authority to license contributions under these terms and retain third-party provenance and license information.
 

@@ -1,86 +1,133 @@
-Dread Hunger Toolkit Noncommercial License 1.0
+# PolyForm Noncommercial License 1.0.0
 
-Copyright (c) 2026 van104
+<https://polyformproject.org/licenses/noncommercial/1.0.0>
 
-1. Scope
-This license applies to the original code, documentation, and assets that the
-copyright holder has authority to license (the "Work"). By exercising the
-permissions below, you accept these conditions. Rights granted independently
-by applicable law are unaffected.
+## Acceptance
 
-2. Noncommercial permission
-Subject to these conditions, you are granted a worldwide, royalty-free,
-non-exclusive license to use, copy, modify, and distribute the Work, including
-modified versions and compiled copies, solely for noncommercial purposes.
-Noncommercial means not intended for or directed toward commercial advantage,
-business operations, or monetary compensation, directly or indirectly.
-Personal study, experimentation, and free hobby or community servers are
-permitted when they meet these conditions.
+In order to get any license under these terms, you must agree
+to them as both strict obligations and conditions to all
+your licenses.
 
-3. Commercial activities are not permitted
-You may not use, modify, or distribute the Work or any part of it for commercial
-purposes, including:
-(a) selling, renting, sublicensing for a fee, or bundling it into a paid product;
-(b) operating paid game servers, paid access, subscriptions, VIP memberships,
-    paid slots, priority queues, paid items, or paid gameplay benefits;
-(c) providing paid hosting, deployment, customization, administration, or support
-    services that use, modify, or distribute the Work;
-(d) using it in business operations or to provide commercial services, including
-    a free service intended to promote or support a commercial offering;
-(e) monetizing a service using the Work through advertising, sponsorship,
-    affiliate commissions, or other direct or indirect commercial benefits.
+## Copyright License
 
-Calling a payment a donation, tip, membership fee, or cost reimbursement does
-not exempt it when it is required, linked to access or benefits, or otherwise
-part of a commercial activity. Truly voluntary donations to a noncommercial
-community project, with no preferential access, goods, services, advertising,
-or other benefit in return, are permitted. Paying an independent infrastructure
-provider to host an otherwise noncommercial server is not itself prohibited.
-No organization is exempt merely because of its nonprofit, educational,
-charitable, or governmental status. This license grants no commercial rights.
+The licensor grants you a copyright license for the
+software to do everything you might do with the software
+that would otherwise infringe the licensor's copyright
+in it for any permitted purpose.  However, you may
+only distribute the software according to [Distribution
+License](#distribution-license) and make changes or new works
+based on the software according to [Changes and New Works
+License](#changes-and-new-works-license).
 
-4. Distribution and modifications
-Every distribution of the Work or any substantial portion, including compiled
-copies and modified versions, must include this complete license and retain
-applicable copyright and third-party notices. You must clearly identify your
-modifications and must not imply endorsement by the original copyright holder.
-The portions of the Work included in a modified or combined work remain subject
-to this license; you may not remove or weaken these conditions or grant rights
-to those portions that this license does not grant. Recipients receive their
-permissions to the Work directly under this license. Independently created
-components are not relicensed merely because they are distributed alongside it.
+## Distribution License
 
-5. Third-party material and earlier licenses
-Third-party software, dependencies, game files, trademarks, and other material
-remain subject to their respective owners' terms. This license neither grants
-rights to such material nor overrides its licenses. It grants no trademark
-rights and does not imply affiliation with the game's owners.
+The licensor grants you an additional copyright license
+to distribute copies of the software.  Your license
+to distribute covers distributing the software with
+changes and new works permitted by [Changes and New Works
+License](#changes-and-new-works-license).
 
-This license applies to copies offered under it. It does not revoke permissions
-already validly granted under an earlier license, including MIT, or impose new
-restrictions on material that a recipient may independently use under such a
-license. New material is not covered by an earlier license merely because it
-appears in the same repository. No right to future versions is granted.
+## Notices
 
-6. Termination
-Permissions granted by this license terminate automatically upon a breach.
-Following termination, you must stop exercising those permissions unless the
-copyright holder reinstates them in writing. Termination does not remove
-obligations or liability arising from earlier breaches, or terminate the
-permissions of recipients who remain in compliance with this license.
+You must ensure that anyone who gets a copy of any part of
+the software from you also gets a copy of these terms or the
+URL for them above, as well as copies of any plain-text lines
+beginning with `Required Notice:` that the licensor provided
+with the software.  For example:
 
-7. No warranty or liability
-THE WORK IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
-INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT HOLDER
-BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
-CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE WORK
-OR THE USE OR OTHER DEALINGS IN THE WORK.
+> Required Notice: Copyright Yoyodyne, Inc. (http://example.com)
 
-This disclaimer applies to the Work to the maximum extent permitted by law.
+## Changes and New Works License
 
-8. Interpretation
-This is a project-specific source-available license, not an OSI-approved
-open-source license. The English text in this file is authoritative; README
-summaries and translations are explanatory only. If a provision is held
-unenforceable, the remaining provisions continue to the extent allowed by law.
+The licensor grants you an additional copyright license to
+make changes and new works based on the software for any
+permitted purpose.
+
+## Patent License
+
+The licensor grants you a patent license for the software that
+covers patent claims the licensor can license, or becomes able
+to license, that you would infringe by using the software.
+
+## Noncommercial Purposes
+
+Any noncommercial purpose is a permitted purpose.
+
+## Personal Uses
+
+Personal use for research, experiment, and testing for
+the benefit of public knowledge, personal study, private
+entertainment, hobby projects, amateur pursuits, or religious
+observance, without any anticipated commercial application,
+is use for a permitted purpose.
+
+## Noncommercial Organizations
+
+Use by any charitable organization, educational institution,
+public research organization, public safety or health
+organization, environmental protection organization,
+or government institution is use for a permitted purpose
+regardless of the source of funding or obligations resulting
+from the funding.
+
+## Fair Use
+
+You may have "fair use" rights for the software under the
+law. These terms do not limit them.
+
+## No Other Rights
+
+These terms do not allow you to sublicense or transfer any of
+your licenses to anyone else, or prevent the licensor from
+granting licenses to anyone else.  These terms do not imply
+any other licenses.
+
+## Patent Defense
+
+If you make any written claim that the software infringes or
+contributes to infringement of any patent, your patent license
+for the software granted under these terms ends immediately. If
+your company makes such a claim, your patent license ends
+immediately for work on behalf of your company.
+
+## Violations
+
+The first time you are notified in writing that you have
+violated any of these terms, or done anything with the software
+not covered by your licenses, your licenses can nonetheless
+continue if you come into full compliance with these terms,
+and take practical steps to correct past violations, within
+32 days of receiving notice.  Otherwise, all your licenses
+end immediately.
+
+## No Liability
+
+***As far as the law allows, the software comes as is, without
+any warranty or condition, and the licensor will not be liable
+to you for any damages arising out of these terms or the use
+or nature of the software, under any kind of legal claim.***
+
+## Definitions
+
+The **licensor** is the individual or entity offering these
+terms, and the **software** is the software the licensor makes
+available under these terms.
+
+**You** refers to the individual or entity agreeing to these
+terms.
+
+**Your company** is any legal entity, sole proprietorship,
+or other kind of organization that you work for, plus all
+organizations that have control over, are under the control of,
+or are under common control with that organization.  **Control**
+means ownership of substantially all the assets of an entity,
+or the power to direct its management and policies by vote,
+contract, or otherwise.  Control can be direct or indirect.
+
+**Your licenses** are all the licenses granted to you for the
+software under these terms.
+
+**Use** means anything you do with the software requiring one
+of your licenses.
+
+Required Notice: Copyright (c) 2026 van104
