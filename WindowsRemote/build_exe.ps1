@@ -23,6 +23,8 @@ try {
         --specpath $BuildDir "gm_console_client.py"
     if ($LASTEXITCODE -ne 0) { throw "GM 控制台客户端打包失败" }
 
+    Copy-Item -LiteralPath (Join-Path $ProjectDir "..\LICENSE") -Destination (Join-Path $DistDir "LICENSE")
+
     Write-Host "`n打包完成：" -ForegroundColor Green
     Get-ChildItem -LiteralPath $DistDir -Filter *.exe | Select-Object FullName, Length
 } finally {

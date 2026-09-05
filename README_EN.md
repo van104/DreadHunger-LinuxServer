@@ -144,7 +144,18 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-Code written specifically for this project is licensed under the Polyform Noncommercial License 1.0.0. See [LICENSE](LICENSE). The game and other third-party components are not covered by this license.
+## License and Noncommercial Use
+
+Original code, documentation, and assets that the licensor has authority to license are covered by the project-specific **Dread Hunger Toolkit Noncommercial License 1.0**. See [LICENSE](LICENSE) for the controlling English terms. This is a source-available noncommercial license, not an OSI-defined open-source license or the standard PolyForm license.
+
+- Permitted: personal study, research, modification, and free community servers and redistribution that meet the noncommercial conditions.
+- Prohibited: selling code or binaries, paid servers, VIP access, paid items or slots, paid deployment or administration using the Work, business operations, and advertising, sponsorship, or promotional monetization of services using it. Modification, renaming, compiling into an EXE, or offering only an online service does not bypass these restrictions.
+- Payments called donations, shared costs, or reimbursements are not allowed when tied to access, priority, or other benefits. Truly voluntary donations to a noncommercial community project without anything in return are permitted. Paying for infrastructure to run an otherwise noncommercial server is not itself prohibited.
+- Distributions of source, modifications, and binaries must include the complete license, retain copyright and third-party notices, and identify modifications. Nonprofit or educational status does not automatically exempt commercial use.
+
+The game, Frida, Python, and other third-party components retain their own licenses; this project cannot grant rights on their behalf. Contributors should confirm their authority to license contributions under these terms and retain third-party provenance and license information.
+
+**Earlier licenses:** Commit `78f6a37` adopted MIT; `9648808` replaced it with noncommercial terms. This change cannot withdraw previously valid MIT permissions or prevent commercial use of the corresponding earlier code under those permissions. Later additions do not automatically receive the earlier MIT license. Ownership and third-party permissions depend on actual provenance; repository notices are not a completed ownership audit.
 
 ## Security Notes
 

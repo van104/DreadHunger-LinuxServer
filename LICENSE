@@ -1,18 +1,86 @@
-Polyform Noncommercial License 1.0.0
+Dread Hunger Toolkit Noncommercial License 1.0
 
 Copyright (c) 2026 van104
 
-Definitions
-Licensed Work: The work made available under this License.
-Commercial Use: Use of the Licensed Work or any derivative of it for monetary gain, including but not limited to paid services, paid hosting, selling copies, licensing for a fee, or use within a commercial organization.
+1. Scope
+This license applies to the original code, documentation, and assets that the
+copyright holder has authority to license (the "Work"). By exercising the
+permissions below, you accept these conditions. Rights granted independently
+by applicable law are unaffected.
 
-Grant of License
-Subject to the terms of this License, the copyright holder grants you a worldwide, royalty‑free, non‑exclusive license to use, copy, modify, merge, publish, and distribute copies of the Licensed Work, solely for Non‑Commercial purposes.
+2. Noncommercial permission
+Subject to these conditions, you are granted a worldwide, royalty-free,
+non-exclusive license to use, copy, modify, and distribute the Work, including
+modified versions and compiled copies, solely for noncommercial purposes.
+Noncommercial means not intended for or directed toward commercial advantage,
+business operations, or monetary compensation, directly or indirectly.
+Personal study, experimentation, and free hobby or community servers are
+permitted when they meet these conditions.
 
-Restrictions
-You may not use the Licensed Work for Commercial Use.
-You must retain the above copyright notice and this license text in all copies or substantial portions of the Licensed Work.
-You may not sublicense the work under terms that remove or weaken the restrictions of this License.
+3. Commercial activities are not permitted
+You may not use, modify, or distribute the Work or any part of it for commercial
+purposes, including:
+(a) selling, renting, sublicensing for a fee, or bundling it into a paid product;
+(b) operating paid game servers, paid access, subscriptions, VIP memberships,
+    paid slots, priority queues, paid items, or paid gameplay benefits;
+(c) providing paid hosting, deployment, customization, administration, or support
+    services that use, modify, or distribute the Work;
+(d) using it in business operations or to provide commercial services, including
+    a free service intended to promote or support a commercial offering;
+(e) monetizing a service using the Work through advertising, sponsorship,
+    affiliate commissions, or other direct or indirect commercial benefits.
 
-No Warranty
-THE LICENSED WORK IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE LICENSED WORK OR THE USE OR OTHER DEALINGS IN THE LICENSED WORK.
+Calling a payment a donation, tip, membership fee, or cost reimbursement does
+not exempt it when it is required, linked to access or benefits, or otherwise
+part of a commercial activity. Truly voluntary donations to a noncommercial
+community project, with no preferential access, goods, services, advertising,
+or other benefit in return, are permitted. Paying an independent infrastructure
+provider to host an otherwise noncommercial server is not itself prohibited.
+No organization is exempt merely because of its nonprofit, educational,
+charitable, or governmental status. This license grants no commercial rights.
+
+4. Distribution and modifications
+Every distribution of the Work or any substantial portion, including compiled
+copies and modified versions, must include this complete license and retain
+applicable copyright and third-party notices. You must clearly identify your
+modifications and must not imply endorsement by the original copyright holder.
+The portions of the Work included in a modified or combined work remain subject
+to this license; you may not remove or weaken these conditions or grant rights
+to those portions that this license does not grant. Recipients receive their
+permissions to the Work directly under this license. Independently created
+components are not relicensed merely because they are distributed alongside it.
+
+5. Third-party material and earlier licenses
+Third-party software, dependencies, game files, trademarks, and other material
+remain subject to their respective owners' terms. This license neither grants
+rights to such material nor overrides its licenses. It grants no trademark
+rights and does not imply affiliation with the game's owners.
+
+This license applies to copies offered under it. It does not revoke permissions
+already validly granted under an earlier license, including MIT, or impose new
+restrictions on material that a recipient may independently use under such a
+license. New material is not covered by an earlier license merely because it
+appears in the same repository. No right to future versions is granted.
+
+6. Termination
+Permissions granted by this license terminate automatically upon a breach.
+Following termination, you must stop exercising those permissions unless the
+copyright holder reinstates them in writing. Termination does not remove
+obligations or liability arising from earlier breaches, or terminate the
+permissions of recipients who remain in compliance with this license.
+
+7. No warranty or liability
+THE WORK IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT HOLDER
+BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE WORK
+OR THE USE OR OTHER DEALINGS IN THE WORK.
+
+This disclaimer applies to the Work to the maximum extent permitted by law.
+
+8. Interpretation
+This is a project-specific source-available license, not an OSI-approved
+open-source license. The English text in this file is authoritative; README
+summaries and translations are explanatory only. If a provision is held
+unenforceable, the remaining provisions continue to the extent allowed by law.
