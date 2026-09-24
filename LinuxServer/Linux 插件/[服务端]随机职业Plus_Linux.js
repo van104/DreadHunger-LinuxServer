@@ -15,6 +15,7 @@ var mod = Process.findModuleByName('DreadHungerServer-Linux-Shipping');
 
 if (mod !== null) {
     var base = mod.base;
+    var FixedRolesFile = DH_LINUX_ROOT + '/.gm_runtime/fixed_roles.json';
 
     var HandleStartingNewPlayerAddress = base.add(0x26CB970);
     var SetPlayerRoleAddress = base.add(0x2772770);
@@ -45,6 +46,16 @@ if (mod !== null) {
     var AvailableRoleTypes = AllRoleTypes.slice();
     var AssignedRole = Object.create(null);
     var AssignedRoleType = Object.create(null);
+
+    function hasActiveFixedRoleList() {
+        try {
+            var payload = JSON.parse(File.readAllText(FixedRolesFile));
+            return payload && Array.isArray(payload.roles) && payload.roles.length > 0 &&
+                Number(payload.expires_at || 0) > Date.now();
+        } catch (e) {
+            return false;
+        }
+    }
 
     function isReadable(address) {
         try {
@@ -181,6 +192,8 @@ if (mod !== null) {
     }
 
     function assignRoleBeforeSelection(controller) {
+        /* 固定职业名单有效时由固定职业插件负责，避免随机 Hook 覆盖大厅选择。 */
+        if (hasActiveFixedRoleList()) return false;
         var playerState = readPlayerState(controller);
         if (playerState.isNull()) {
             console.log('[随机职业Plus] 玩家进入时 PlayerState 尚未就绪，保留原选人流程');
@@ -231,6 +244,7 @@ if (mod !== null) {
     Interceptor.attach(SetPlayerRoleAddress, {
         onEnter: function (args) {
             try {
+                if (hasActiveFixedRoleList()) return;
                 var playerState = args[0];
                 var requestedRole = args[1];
                 if (playerState.isNull() || requestedRole.isNull()) return;

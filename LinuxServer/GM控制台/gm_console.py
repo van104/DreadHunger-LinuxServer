@@ -28,6 +28,8 @@ BLACKLIST_FILE = "gm_blacklist.json"
 BLACKLIST_CHECK_TOKEN_FILE = "gm_blacklist_check_token.txt"
 TELEPORT_PRESETS_FILE = "gm_teleport_presets.json"
 WINNING_CARD_REWARD_FILE = "gm_winning_card_reward.json"
+FIXED_ROLES_FILE = "fixed_roles.json"
+FIXED_ROLES_TTL_MS = 10 * 60 * 1000
 DEFAULT_WINNING_CARD_REWARD = {
     "enabled": False,
     "mode": "fixed",
@@ -239,6 +241,7 @@ class GMConsole:
         self.blacklist_lock = threading.RLock()
         self.teleport_presets_lock = threading.RLock()
         self.winning_card_reward_lock = threading.RLock()
+        self.fixed_roles_lock = threading.RLock()
         self.runtime_dir = root / GM_RUNTIME_DIR
         self.runtime_dir.mkdir(parents=True, exist_ok=True)
         self.command_path = self.runtime_dir / COMMAND_FILE
@@ -249,6 +252,7 @@ class GMConsole:
         self.blacklist_check_token_path = root / BLACKLIST_CHECK_TOKEN_FILE
         self.teleport_presets_path = root / TELEPORT_PRESETS_FILE
         self.winning_card_reward_path = root / WINNING_CARD_REWARD_FILE
+        self.fixed_roles_path = self.runtime_dir / FIXED_ROLES_FILE
         self.game_log_path = root / "DreadHunger" / "Saved" / "Logs" / "DreadHunger.log"
         self.blacklist_check_token = self._load_or_create_blacklist_check_token()
 
@@ -264,6 +268,52 @@ class GMConsole:
 
     def valid_blacklist_check_token(self, token: str) -> bool:
         return bool(token) and hmac.compare_digest(token, self.blacklist_check_token)
+
+    def save_fixed_roles(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        raw_roles = params.get("roles")
+        if not isinstance(raw_roles, list) or not 1 <= len(raw_roles) <= 8:
+            raise ValueError("固定职业名单必须包含 1 到 8 名玩家")
+
+        roles = []
+        seen_users = set()
+        seen_roles = set()
+        for raw in raw_roles:
+            if not isinstance(raw, dict):
+                raise ValueError("固定职业名单格式无效")
+            user_id = str(raw.get("user_id") or raw.get("UID") or "").strip()
+            if user_id.startswith("EOSPlus:"):
+                user_id = user_id[len("EOSPlus:") :]
+            if not (
+                STEAM_ID_PATTERN.fullmatch(user_id)
+                or EOS_ID_PATTERN.fullmatch(user_id)
+                or FULL_USER_ID_PATTERN.fullmatch(user_id)
+            ):
+                raise ValueError("固定职业名单包含无效玩家 ID")
+
+            role = raw.get("role", raw.get("Job"))
+            if isinstance(role, bool) or not isinstance(role, int) or not 1 <= role <= 8:
+                raise ValueError("职业编号必须是 1 到 8 的整数")
+
+            normalized_user = user_id.casefold()
+            if normalized_user in seen_users:
+                raise ValueError("固定职业名单包含重复玩家")
+            if role in seen_roles:
+                raise ValueError("固定职业名单包含重复职业")
+            seen_users.add(normalized_user)
+            seen_roles.add(role)
+            roles.append({"user_id": user_id, "role": role})
+
+        uploaded_at = int(time.time() * 1000)
+        payload = {
+            "version": 1,
+            "upload_id": uuid.uuid4().hex,
+            "uploaded_at": uploaded_at,
+            "expires_at": uploaded_at + FIXED_ROLES_TTL_MS,
+            "roles": roles,
+        }
+        with self.fixed_roles_lock:
+            atomic_write_json(self.fixed_roles_path, payload)
+        return {"ok": True, "count": len(roles), "expires_at": payload["expires_at"]}
 
     def check_password(self, pwd: str) -> bool:
         return hmac.compare_digest(hashlib.sha256(pwd.encode()).hexdigest(), self.password_hash)
@@ -2739,6 +2789,16 @@ def make_handler(console: GMConsole):
                     self.wfile.write(data)
                 else:
                     self.send_json({"error": "密码错误"}, 401)
+                return
+
+            if path == "/api/fixed-roles":
+                if not console.valid_blacklist_check_token(self.get_auth_token()):
+                    self.send_json({"error": "大厅同步令牌无效"}, 401)
+                    return
+                try:
+                    self.send_json(console.save_fixed_roles(self.get_params()))
+                except ValueError as exc:
+                    self.send_json({"error": str(exc)}, 400)
                 return
 
             if not self.is_authed():

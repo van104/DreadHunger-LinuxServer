@@ -36,7 +36,7 @@ from remote_common import (
 
 
 APP_ID = "1418630"
-QUICK_JOIN_VERSION = "1.6.9"
+QUICK_JOIN_VERSION = "1.7.1"
 DEFAULT_ADDRESS = "127.0.0.1:9100"
 DEFAULT_CLIENT = Path(r"E:\Dread Hunger\DreadHunger.exe")
 GAME_PROCESS_NAMES = ("DreadHunger-Win64-Shipping.exe", "DreadHunger.exe")
@@ -62,6 +62,17 @@ HISTORY_LIMIT = 20
 CLIENT_BRIDGE_HOOK_FILENAME = "connect_client_win64.js"
 DEFAULT_ANNOUNCEMENT = "欢迎来到服务器，祝你游戏愉快！"
 DEFAULT_GM_PORT = 9900
+CLIENT_ROLE_TYPES = {
+    "captain": 1,
+    "engineer": 2,
+    "hunter": 3,
+    "cook": 4,
+    "navigator": 5,
+    "chaplain": 6,
+    "marine": 7,
+    "royal marine": 7,
+    "doctor": 8,
+}
 LOCAL_USER_ID_PATTERN = re.compile(
     r"(?:UniqueId:\s*|userId:\s*)(?:EOSPlus:)?(?P<user_id>\d{10,20}_\+_\|[0-9A-Za-z-]{8,})",
     re.IGNORECASE,
@@ -544,14 +555,14 @@ def connector_request(address: str) -> dict:
     return {"op": "Connect", "IP": resolved, "Port": port}
 
 
-def send_client_bridge_command(command: dict) -> None:
+def send_client_bridge_command(command: dict, ack_seconds: float = CLIENT_BRIDGE_ACK_SECONDS) -> dict:
     payload = json.dumps(command, ensure_ascii=False, separators=(",", ":")).encode("utf-16-le")
     trace_quick_join("bridge-send op=%s" % command.get("op", "?"))
     try:
         with socket.create_connection(("127.0.0.1", CLIENT_BRIDGE_PORT), timeout=CLIENT_BRIDGE_TIMEOUT_SECONDS) as client:
             client.sendall(payload)
             client.shutdown(socket.SHUT_WR)
-            client.settimeout(CLIENT_BRIDGE_ACK_SECONDS)
+            client.settimeout(ack_seconds)
             try:
                 response = client.recv(4096)
             except socket.timeout:
@@ -563,11 +574,15 @@ def send_client_bridge_command(command: dict) -> None:
         try:
             result = json.loads(response.decode("utf-16-le").rstrip("\x00"))
         except (UnicodeDecodeError, json.JSONDecodeError):
-            return
+            return {}
         if isinstance(result, dict) and result.get("success") is False:
             trace_quick_join("bridge-rejected op=%s error=%s" % (command.get("op", "?"), result.get("error") or "unknown"))
             raise OSError(str(result.get("error") or "客户端连接器拒绝了命令"))
+        if isinstance(result, dict):
+            trace_quick_join("bridge-accepted op=%s" % command.get("op", "?"))
+            return result
     trace_quick_join("bridge-accepted op=%s" % command.get("op", "?"))
+    return {}
 
 
 def send_connector_command(address: str) -> str:
@@ -578,6 +593,42 @@ def send_connector_command(address: str) -> str:
 
 def send_client_announcement(text: str) -> None:
     send_client_bridge_command({"op": "sendMessage", "title": "快速进服器", "msg": text})
+
+
+def read_client_fixed_roles() -> list[dict]:
+    result = send_client_bridge_command({"op": "GetFixedRoles"}, ack_seconds=2.0)
+    records = result.get("PlayerRoles")
+    if isinstance(records, dict):
+        records = records.get("Records")
+    if not isinstance(records, list):
+        raise OSError("客户端连接器没有返回大厅职业名单")
+
+    roles = []
+    seen_users = set()
+    seen_roles = set()
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        user_id = str(record.get("UID") or record.get("UniqueID") or record.get("user_id") or "").strip()
+        if user_id.startswith("EOSPlus:"):
+            user_id = user_id[len("EOSPlus:") :]
+        raw_role = record.get("Job", record.get("role", 0))
+        try:
+            role = int(raw_role)
+        except (TypeError, ValueError):
+            role = CLIENT_ROLE_TYPES.get(str(raw_role).strip().casefold(), 0)
+        if not user_id or not 1 <= role <= 8:
+            continue
+        user_key = user_id.casefold()
+        if user_key in seen_users or role in seen_roles:
+            raise OSError("客户端大厅职业名单存在重复玩家或重复职业")
+        seen_users.add(user_key)
+        seen_roles.add(role)
+        roles.append({"user_id": user_id, "role": role})
+
+    if not roles:
+        raise OSError("客户端大厅还没有可同步的已选职业")
+    return roles
 
 
 def show_game_notice(text: str, duration_ms: int, danger: bool = False) -> None:
@@ -647,6 +698,7 @@ class QuickJoinApp:
                 "announcement_enabled": False,
                 "announcement_text": DEFAULT_ANNOUNCEMENT,
                 "blacklist_check_enabled": True,
+                "fixed_roles_enabled": True,
                 "gm_api_port": DEFAULT_GM_PORT,
                 "blacklist_check_token": "",
             },
@@ -657,6 +709,7 @@ class QuickJoinApp:
         self.announcement_enabled_var = tk.BooleanVar(value=bool(self.settings.get("announcement_enabled", False)))
         self.announcement_status_var = tk.StringVar(value="使用客户端内置游戏线程消息通道")
         self.blacklist_check_enabled_var = tk.BooleanVar(value=bool(self.settings.get("blacklist_check_enabled", True)))
+        self.fixed_roles_enabled_var = tk.BooleanVar(value=bool(self.settings.get("fixed_roles_enabled", True)))
         self.gm_api_port_var = tk.StringVar(value=str(self.settings.get("gm_api_port") or DEFAULT_GM_PORT))
         self.blacklist_check_token_var = tk.StringVar(value=str(self.settings.get("blacklist_check_token") or ""))
         self.blacklist_status_var = tk.StringVar(value="进入前将同时检查本机账号与 Linux 实时大厅")
@@ -674,6 +727,8 @@ class QuickJoinApp:
         self._pre_join_announcement_handled = False
         self._blacklist_warning_text = ""
         self._blacklist_check_started_at = 0.0
+        self._fixed_roles_synced = False
+        self._fixed_roles_syncing = False
         self._retry_requires_fresh_lobby = False
         self._retry_log_offset = 0
         self._lobby_ready_since = None
@@ -745,6 +800,12 @@ class QuickJoinApp:
         ttk.Entry(blacklist_box, textvariable=self.blacklist_check_token_var, show="●", width=18).grid(row=1, column=3, sticky="ew", padx=(6, 0), pady=(7, 0))
         blacklist_box.columnconfigure(3, weight=1)
         tk.Label(blacklist_box, textvariable=self.blacklist_status_var, bg=PANEL, fg=MUTED, font=("Microsoft YaHei UI", 8), anchor="w", justify="left", wraplength=460).grid(row=2, column=0, columnspan=4, sticky="ew", pady=(7, 0))
+        ttk.Checkbutton(
+            blacklist_box,
+            text="同步大厅职业并由服务器固定分配（使用同一令牌）",
+            variable=self.fixed_roles_enabled_var,
+            command=self._save_settings,
+        ).grid(row=3, column=0, columnspan=4, sticky="w", pady=(7, 0))
 
         join_row = ttk.Frame(server_card, style="Panel.TFrame")
         join_row.pack(fill="x", padx=18, pady=(0, 18))
@@ -836,6 +897,7 @@ class QuickJoinApp:
             "announcement_enabled": bool(self.announcement_enabled_var.get()),
             "announcement_text": self._announcement_value(),
             "blacklist_check_enabled": bool(self.blacklist_check_enabled_var.get()),
+            "fixed_roles_enabled": bool(self.fixed_roles_enabled_var.get()),
             "gm_api_port": self.gm_api_port_var.get().strip() or str(DEFAULT_GM_PORT),
             "blacklist_check_token": self.blacklist_check_token_var.get().strip(),
         }
@@ -1009,6 +1071,40 @@ class QuickJoinApp:
             "POST",
             {"user_id": read_local_user_id()},
         )
+
+    def _upload_fixed_roles(self, address: str) -> dict:
+        token = self.blacklist_check_token_var.get().strip()
+        if not token:
+            raise ValueError("尚未填写大厅同步令牌")
+        try:
+            port = int(self.gm_api_port_var.get().strip())
+        except ValueError:
+            raise ValueError("GM 端口必须是数字")
+        roles = read_client_fixed_roles()
+        api = RemoteApi(address_host(address), port, token=token, timeout=6.0)
+        return api.request("/api/fixed-roles", "POST", {"roles": roles})
+
+    def _fixed_roles_sync_ok(self, data: dict, address: str, generation: int, wait_for_client: bool) -> None:
+        self._fixed_roles_syncing = False
+        if not self._join_active or generation != self._join_generation:
+            return
+        count = int(data.get("count", 0)) if isinstance(data, dict) else 0
+        if count < 1:
+            self._fixed_roles_sync_failed(
+                OSError("服务器没有接受大厅职业名单"), address, generation, wait_for_client
+            )
+            return
+        self._fixed_roles_synced = True
+        self.status_var.set("已同步 %d 名玩家的大厅职业，准备连接服务器……" % count)
+        self.root.after(0, lambda: self._send_join_attempt(address, generation, wait_for_client))
+
+    def _fixed_roles_sync_failed(self, exc: Exception, address: str, generation: int, wait_for_client: bool) -> None:
+        self._fixed_roles_syncing = False
+        if not self._join_active or generation != self._join_generation:
+            return
+        self.stop_auto_join("大厅职业同步失败，已停止连接：%s" % exc)
+        self.root.deiconify()
+        messagebox.showerror("固定职业同步失败", str(exc))
 
     def _continue_after_blacklist_check(self, address: str, generation: int, wait_for_client: bool) -> None:
         if not self._join_active or generation != self._join_generation:
@@ -1307,6 +1403,8 @@ class QuickJoinApp:
         self._join_attempt = 0
         self._connector_waits = 0
         self._join_load_seen_at = None
+        self._fixed_roles_synced = False
+        self._fixed_roles_syncing = False
         self._pre_join_announcement_handled = False
         self._blacklist_warning_text = ""
         self._retry_requires_fresh_lobby = wait_for_client
@@ -1376,6 +1474,17 @@ class QuickJoinApp:
                 return
             self.status_var.set("等待客户端进入船上大厅并稳定 %d 秒……" % LOBBY_STABLE_SECONDS)
             self.root.after(500, lambda: self._send_join_attempt(address, generation, True))
+            return
+        if self.fixed_roles_enabled_var.get() and not self._fixed_roles_synced:
+            if self._fixed_roles_syncing:
+                return
+            self._fixed_roles_syncing = True
+            self.status_var.set("正在读取并同步客户端大厅职业……")
+            self.runner.submit(
+                lambda: self._upload_fixed_roles(address),
+                lambda data: self._fixed_roles_sync_ok(data, address, generation, wait_for_client),
+                lambda exc: self._fixed_roles_sync_failed(exc, address, generation, wait_for_client),
+            )
             return
         if self._handle_pre_join_announcement():
             self.root.after(
