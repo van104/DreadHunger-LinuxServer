@@ -44,10 +44,10 @@ LinuxServer/
 
 Download and extract `DreadHunger-Linux-Toolkit.tar.gz` from [GitHub Releases](https://github.com/van104/DreadHunger-LinuxServer/releases). New releases containing Docker support include both the native scripts and `LinuxServer/Docker/`; older releases may not include this directory.
 
-Docker support currently lives on the `codex/docker-deployment-bundle` branch. To obtain it directly:
+Docker deployment files are included on the `main` branch. To obtain them directly:
 
 ```bash
-git clone --depth 1 --branch codex/docker-deployment-bundle \
+git clone --depth 1 --branch main \
   https://github.com/van104/DreadHunger-LinuxServer.git "DreadHunger-LinuxServer"
 cd "DreadHunger-LinuxServer"
 ```

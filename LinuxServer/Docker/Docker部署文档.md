@@ -55,10 +55,10 @@ LinuxServer/
 
 ### 从 GitHub 获取部署文件
 
-当前 Docker 代码位于 `codex/docker-deployment-bundle` 分支,可在 Linux 服务器获取:
+Docker 部署文件已包含在 `main` 分支,可在 Linux 服务器获取:
 
 ```bash
-git clone --depth 1 --branch codex/docker-deployment-bundle \
+git clone --depth 1 --branch main \
   https://github.com/van104/DreadHunger-LinuxServer.git "DreadHunger-LinuxServer"
 cd "DreadHunger-LinuxServer/LinuxServer/Docker"
 ```

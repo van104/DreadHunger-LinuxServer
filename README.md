@@ -44,10 +44,10 @@ LinuxServer/
 
 可以从 [GitHub Releases](https://github.com/van104/DreadHunger-LinuxServer/releases) 下载 `DreadHunger-Linux-Toolkit.tar.gz` 并解压。包含 Docker 的新版本工具包同时提供裸机脚本和 `LinuxServer/Docker/`；旧版 Release 可能不包含该目录。
 
-当前 Docker 代码位于 `codex/docker-deployment-bundle` 分支，可直接获取：
+Docker 部署文件已包含在 `main` 分支，可直接获取：
 
 ```bash
-git clone --depth 1 --branch codex/docker-deployment-bundle \
+git clone --depth 1 --branch main \
   https://github.com/van104/DreadHunger-LinuxServer.git "DreadHunger-LinuxServer"
 cd "DreadHunger-LinuxServer"
 ```
