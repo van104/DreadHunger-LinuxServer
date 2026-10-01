@@ -2,6 +2,8 @@
 
 **简体中文** | [English](README_EN.md)
 
+**快速部署：** [Docker Compose](#docker-compose-一键部署) | [Linux 裸机](#linux-裸机一键部署) | [GitHub 下载](#从-github-获取部署文件)
+
 这是一个面向 Linux Dread Hunger 恐惧饥荒（海上狼人杀）私服的管理工具包，包含：
 
 - Linux Web 开服器：启动、停止、配置服务器和管理插件。

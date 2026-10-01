@@ -2,6 +2,8 @@
 
 [简体中文](README.md) | **English**
 
+**Quick deployment:** [Docker Compose](#one-click-docker-compose-deployment) | [Native Linux](#one-click-native-linux-deployment) | [GitHub downloads](#get-deployment-files-from-github)
+
 This toolkit helps you manage a self-hosted Dread Hunger server on Linux. It includes:
 
 - A Linux web server manager for starting, stopping, configuring, and managing plugins.
