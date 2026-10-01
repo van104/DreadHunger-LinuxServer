@@ -1,9 +1,10 @@
 /*
-   在 HandleStartingNewPlayer 检查 SelectedRole 前分配职业，跳过选人界面。
+   在大厅和游戏的 HandleStartingNewPlayer 检查 SelectedRole 前分配职业，跳过选人界面。
    同局职业不重复；锁定首次分配结果，覆盖客户端后续提交。
 
    当前 Linux 服务端二进制:
-   - ADH_GameMode::HandleStartingNewPlayer_Implementation = base + 0x26CB970
+   - ADH_LobbyGameMode::HandleStartingNewPlayer_Implementation = base + 0x2723F40
+   - ADH_GameMode::HandleStartingNewPlayer_Implementation      = base + 0x26CB970
    - ADH_PlayerState::SetPlayerRole                    = base + 0x2772770
    - UDH_PlayerRoleData::FindByType                    = base + 0x275CEE0
    - UDH_GameplayStatics::IsRoleTaken                  = base + 0x27C8750
@@ -16,7 +17,7 @@ var mod = Process.findModuleByName('DreadHungerServer-Linux-Shipping');
 if (mod !== null) {
     var base = mod.base;
 
-    var HandleStartingNewPlayerAddress = base.add(0x26CB970);
+    var HandleStartingNewPlayerAddresses = [base.add(0x2723F40), base.add(0x26CB970)];
     var SetPlayerRoleAddress = base.add(0x2772770);
     var GWorld = base.add(0x5C9B6D0);
 
@@ -251,19 +252,18 @@ if (mod !== null) {
         }
     });
 
-    /*
-       关键 Hook：原函数在入口后检查 Controller.PlayerState.SelectedRole。
-       此处先同步分配，使原函数直接走“已有职业”的进入游戏分支。
-    */
-    Interceptor.attach(HandleStartingNewPlayerAddress, {
-        onEnter: function (args) {
-            try {
-                var controller = args[1];
-                if (controller.isNull()) return;
-                assignRoleBeforeSelection(controller);
-            } catch (e) {
-                console.log('[随机职业Plus] HandleStartingNewPlayer Hook 异常: ' + e);
+    /* 大厅覆盖了游戏的入服函数，两个入口都要在检查 SelectedRole 前完成分配。 */
+    HandleStartingNewPlayerAddresses.forEach(function (address) {
+        Interceptor.attach(address, {
+            onEnter: function (args) {
+                try {
+                    var controller = args[1];
+                    if (controller.isNull()) return;
+                    assignRoleBeforeSelection(controller);
+                } catch (e) {
+                    console.log('[随机职业Plus] HandleStartingNewPlayer Hook 异常: ' + e);
+                }
             }
-        }
+        });
     });
 }
