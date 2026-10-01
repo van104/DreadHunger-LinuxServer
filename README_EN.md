@@ -159,6 +159,7 @@ Players can download `DreadHungerQuickJoin.exe` from the GitHub Release and ente
 ## Plugin Changes and Upgrades
 
 - The injector reads plugin files only when it establishes a Frida session. After adding, deleting, renaming, or editing a plugin, click **Restart Injector** in the server manager, or wait until the current match ends and the next injection begins, before the change takes effect.
+- Random roles take priority when both random and fixed-role plugins are enabled. To use the lobby roles uploaded by the quick-join tool, disable random roles and restart the injector.
 - Before upgrading a native deployment, run `./dhctl.sh stop` and back up `deploy_config.json`, `开服器/manager_config.json`, the GM blacklist, and any custom plugins. Replace the program files, then run `./install.sh` again. For Docker deployments, follow the guide linked above.
 - In native deployments, the injector finds the game server by process name, so running multiple instances reliably on one machine is not supported. Do not start multiple server instances at the same time; even with different ports, Frida may inject into the wrong process. Docker instances isolate processes but still require separate toolkit and game directories and different ports.
 

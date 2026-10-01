@@ -281,6 +281,9 @@ def load_plugins(root_dir: Path, plugins_dir: Path) -> None:
 
         # 每次建立 Frida 会话前重新扫描插件目录。
         script_paths = sorted(plugins_dir.glob("*.js"))
+        if any(path.name == "[服务端]随机职业Plus_Linux.js" for path in script_paths):
+            script_paths = [path for path in script_paths if path.name != "[服务端]固定职业_Linux.js"]
+            log("随机职业已启用，跳过固定职业插件；关闭随机职业后可使用大厅固定职业")
         if not script_paths:
             log("插件目录没有 .js 文件: %s" % plugins_dir)
             try:
