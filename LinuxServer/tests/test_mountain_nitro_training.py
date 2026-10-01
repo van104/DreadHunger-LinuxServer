@@ -5,8 +5,8 @@ from pathlib import Path
 
 
 LINUX_SERVER_ROOT = Path(__file__).resolve().parents[1]
-SINGLE_PLUGIN_PATH = LINUX_SERVER_ROOT / "Linux 插件" / "[服务端]单人山顶飞天甘油训练.js.disabled"
-MULTIPLAYER_PLUGIN_PATH = LINUX_SERVER_ROOT / "Linux 插件" / "[服务端]多人山顶飞天甘油训练.js"
+SINGLE_PLUGIN_PATH = LINUX_SERVER_ROOT / "app" / "Linux 插件" / "[服务端]单人山顶飞天甘油训练.js.disabled"
+MULTIPLAYER_PLUGIN_PATH = LINUX_SERVER_ROOT / "app" / "Linux 插件" / "[服务端]多人山顶飞天甘油训练.js"
 
 
 NODE_HARNESS = r"""
@@ -515,7 +515,7 @@ if (spawnedPackIce.length !== 1 || spawnedPackIce[0][1] !== packIceActorClass.va
 
 class MountainNitroTrainingTests(unittest.TestCase):
     def test_only_multiplayer_variant_is_enabled_by_default(self):
-        active = sorted(path.name for path in (LINUX_SERVER_ROOT / "Linux 插件").glob("*山顶飞天甘油训练*.js"))
+        active = sorted(path.name for path in (LINUX_SERVER_ROOT / "app" / "Linux 插件").glob("*山顶飞天甘油训练*.js"))
         self.assertEqual(active, [MULTIPLAYER_PLUGIN_PATH.name])
         self.assertTrue(SINGLE_PLUGIN_PATH.is_file())
 

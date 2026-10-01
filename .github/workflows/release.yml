@@ -42,24 +42,25 @@ jobs:
       - name: Validate Python and JavaScript sources
         run: |
           python3 -m py_compile \
-            LinuxServer/dhctl.py \
-            LinuxServer/frida_loader.py \
-            "LinuxServer/开服器/DreadHungerLinuxManager.py" \
-            "LinuxServer/GM控制台/gm_console.py"
+            LinuxServer/app/dhctl.py \
+            LinuxServer/app/frida_loader.py \
+            "LinuxServer/app/开服器/DreadHungerLinuxManager.py" \
+            "LinuxServer/app/GM控制台/gm_console.py"
           bash -n LinuxServer/install.sh LinuxServer/dhctl.sh LinuxServer/DreadHungerServer.sh
-          find "LinuxServer/Linux 插件" -maxdepth 1 -type f -name '*.js' -print0 |
+          find "LinuxServer/app/Linux 插件" -maxdepth 1 -type f -name '*.js' -print0 |
             xargs -0 -n1 node --check
           python3 -m unittest discover -s LinuxServer/tests -p 'test_*.py'
       - name: Validate Docker deployment
         run: |
           python3 -m py_compile \
-            LinuxServer/Docker/docker_entrypoint.py \
-            LinuxServer/Docker/dhctl.py \
-            LinuxServer/Docker/frida_loader.py \
-            "LinuxServer/Docker/开服器/DreadHungerLinuxManager.py" \
-            "LinuxServer/Docker/GM控制台/gm_console.py"
+            LinuxServer/Docker/migrate_layout.py \
+            LinuxServer/Docker/app/docker_entrypoint.py \
+            LinuxServer/Docker/app/dhctl.py \
+            LinuxServer/Docker/app/frida_loader.py \
+            "LinuxServer/Docker/app/开服器/DreadHungerLinuxManager.py" \
+            "LinuxServer/Docker/app/GM控制台/gm_console.py"
           bash -n LinuxServer/Docker/DreadHungerServer.sh
-          find "LinuxServer/Docker/Linux 插件" -maxdepth 1 -type f -name '*.js' -print0 |
+          find "LinuxServer/Docker/app/Linux 插件" -maxdepth 1 -type f -name '*.js' -print0 |
             xargs -0 -n1 node --check
           python3 -m unittest discover -s LinuxServer/Docker/tests -p 'test_*.py'
           docker compose -f LinuxServer/Docker/compose.yaml config --no-env-resolution --quiet
@@ -68,7 +69,7 @@ jobs:
         run: |
           mkdir -p release-stage/DreadHunger-Linux-Toolkit
           cp README.md README_EN.md LICENSE release-stage/DreadHunger-Linux-Toolkit/
-          git archive HEAD LinuxServer | tar -x -C release-stage/DreadHunger-Linux-Toolkit/
+          git archive HEAD LinuxServer docs | tar -x -C release-stage/DreadHunger-Linux-Toolkit/
           rm -rf \
             release-stage/DreadHunger-Linux-Toolkit/LinuxServer/DreadHunger \
             release-stage/DreadHunger-Linux-Toolkit/LinuxServer/Engine \
@@ -77,15 +78,15 @@ jobs:
             release-stage/DreadHunger-Linux-Toolkit/LinuxServer/.venv \
             release-stage/DreadHunger-Linux-Toolkit/LinuxServer/.runtime \
             release-stage/DreadHunger-Linux-Toolkit/LinuxServer/.gm_runtime \
-            "release-stage/DreadHunger-Linux-Toolkit/LinuxServer/Linux 插件/备份"
+            "release-stage/DreadHunger-Linux-Toolkit/LinuxServer/app/Linux 插件/备份"
           rm -f \
             release-stage/DreadHunger-Linux-Toolkit/LinuxServer/deploy_config.json \
             release-stage/DreadHunger-Linux-Toolkit/LinuxServer/gm_commands.json \
-            "release-stage/DreadHunger-Linux-Toolkit/LinuxServer/GM控制台/gm_announce.json" \
+            "release-stage/DreadHunger-Linux-Toolkit/LinuxServer/app/GM控制台/gm_announce.json" \
             release-stage/DreadHunger-Linux-Toolkit/LinuxServer/Manifest_DebugFiles_Linux.txt \
             release-stage/DreadHunger-Linux-Toolkit/LinuxServer/Manifest_NonUFSFiles_Linux.txt \
-            "release-stage/DreadHunger-Linux-Toolkit/LinuxServer/开服器/manager_config.json" \
-            "release-stage/DreadHunger-Linux-Toolkit/LinuxServer/开服器/.dread_hunger_manager_state.json"
+            "release-stage/DreadHunger-Linux-Toolkit/LinuxServer/app/开服器/manager_config.json" \
+            "release-stage/DreadHunger-Linux-Toolkit/LinuxServer/app/开服器/.dread_hunger_manager_state.json"
           find release-stage -type d -name __pycache__ -prune -exec rm -rf {} +
           find release-stage -type f -name '*.log' -delete
           chmod +x \

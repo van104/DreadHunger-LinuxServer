@@ -6,9 +6,9 @@ VENV_DIR="$SCRIPT_DIR/.venv"
 CONFIG_FILE="$SCRIPT_DIR/deploy_config.json"
 SERVER_BINARY="$SCRIPT_DIR/DreadHunger/Binaries/Linux/DreadHungerServer-Linux-Shipping"
 MANAGER_CONFIG="$SCRIPT_DIR/开服器/manager_config.json"
-MANAGER_EXAMPLE="$SCRIPT_DIR/开服器/manager_config.example.json"
+MANAGER_EXAMPLE="$SCRIPT_DIR/config/manager_config.example.json"
 ANNOUNCE_CONFIG="$SCRIPT_DIR/GM控制台/gm_announce.json"
-ANNOUNCE_EXAMPLE="$SCRIPT_DIR/GM控制台/gm_announce.example.json"
+ANNOUNCE_EXAMPLE="$SCRIPT_DIR/config/gm_announce.example.json"
 GM_RUNTIME_DIR="$SCRIPT_DIR/.gm_runtime"
 
 say() {
@@ -165,6 +165,7 @@ os.chmod(path, 0o600)
 PY
 fi
 
+mkdir -p "$(dirname "$MANAGER_CONFIG")" "$(dirname "$ANNOUNCE_CONFIG")"
 export DH_INSTALL_DEPLOY_CONFIG="$CONFIG_FILE"
 export DH_INSTALL_MANAGER_CONFIG="$MANAGER_CONFIG"
 export DH_INSTALL_MANAGER_EXAMPLE="$MANAGER_EXAMPLE"

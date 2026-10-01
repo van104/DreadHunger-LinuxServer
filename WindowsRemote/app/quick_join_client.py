@@ -354,6 +354,8 @@ def format_preflight_clear_notice(announcement: str = "") -> str:
 
 def resource_path(name: str) -> Path:
     root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    if name.startswith("assets/") and not hasattr(sys, "_MEIPASS"):
+        root = root.parent
     return root / name
 
 

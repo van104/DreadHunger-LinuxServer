@@ -17,7 +17,8 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
-ROOT = Path(__file__).resolve().parent
+SOURCE_ROOT = Path(__file__).resolve().parent
+ROOT = Path(os.environ.get("DH_LINUX_ROOT", str(SOURCE_ROOT.parent))).resolve()
 CONFIG_PATH = ROOT / "deploy_config.json"
 RUNTIME_DIR = ROOT / ".runtime"
 VENV_PYTHON = ROOT / ".venv" / "bin" / "python3"
@@ -28,13 +29,14 @@ class ControlError(RuntimeError):
     pass
 
 
-def load_config() -> Dict[str, Any]:
-    try:
-        value = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-    except FileNotFoundError as exc:
-        raise ControlError("缺少 deploy_config.json，请先运行 ./install.sh") from exc
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        raise ControlError("部署配置无法读取：%s" % exc) from exc
+def load_config(value: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    if value is None:
+        try:
+            value = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        except FileNotFoundError as exc:
+            raise ControlError("缺少 deploy_config.json，请先运行 ./install.sh") from exc
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise ControlError("部署配置无法读取：%s" % exc) from exc
     if not isinstance(value, dict):
         raise ControlError("deploy_config.json 必须是 JSON 对象")
 
@@ -64,8 +66,9 @@ def load_config() -> Dict[str, Any]:
 
 
 def python_executable() -> str:
-    if VENV_PYTHON.is_file():
-        return str(VENV_PYTHON)
+    python = Path(os.environ.get("DH_PYTHON", str(VENV_PYTHON)))
+    if python.is_file():
+        return str(python)
     raise ControlError("未找到 Linux Python 虚拟环境，请先运行 ./install.sh")
 
 
@@ -241,7 +244,7 @@ def start_all(config: Dict[str, Any]) -> None:
         "DreadHungerLinuxManager.py",
         [
             python,
-            str(ROOT / "开服器" / "DreadHungerLinuxManager.py"),
+            str(SOURCE_ROOT / "开服器" / "DreadHungerLinuxManager.py"),
             "--root",
             str(ROOT),
             "--host",
@@ -256,7 +259,7 @@ def start_all(config: Dict[str, Any]) -> None:
         "gm_console.py",
         [
             python,
-            str(ROOT / "GM控制台" / "gm_console.py"),
+            str(SOURCE_ROOT / "GM控制台" / "gm_console.py"),
             "--root",
             str(ROOT),
             "--host",

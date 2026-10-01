@@ -2,6 +2,8 @@
 
 **简体中文** | [English](README_EN.md)
 
+目录已统一为 `app/` 程序、`config/` 模板与 `docs/` 文档；Docker 运行数据放在 `data/`。详见 [目录结构与升级说明](docs/目录结构.md)。
+
 **快速部署：** [Docker Compose](#docker-compose-一键部署) | [Linux 裸机](#linux-裸机一键部署) | [GitHub 下载](#从-github-获取部署文件)
 
 这是一个面向 Linux Dread Hunger 恐惧饥荒（海上狼人杀）私服的管理工具包，包含：
@@ -35,9 +37,9 @@ LinuxServer/
 ├── DreadHunger/                    # 用户自行提供
 │   └── Binaries/Linux/
 │       └── DreadHungerServer-Linux-Shipping
-├── Linux 插件/
-├── 开服器/
-├── GM控制台/
+├── app/Linux 插件/
+├── app/开服器/
+├── app/GM控制台/
 ├── install.sh
 └── dhctl.sh
 ```
@@ -74,9 +76,9 @@ docker compose up -d --build
 docker compose logs -f --tail=100
 ```
 
-整个 `Docker/` 目录都需要保留，包括 `frida_loader.py`、开服器、GM 控制台与插件。Compose 挂载上一级的游戏目录，配置和日志保留在宿主机。迁移已有裸机服务时，先在原工具目录运行 `./dhctl.sh stop`，避免端口冲突。
+整个 `Docker/` 目录都需要保留，包括 `app/frida_loader.py`、开服器、GM 控制台与插件；实际配置和日志统一保存在 `data/`。Compose 挂载上一级的游戏目录，配置和日志保留在宿主机。迁移已有裸机服务时，先在原工具目录运行 `./dhctl.sh stop`，避免端口冲突。
 
-默认访问 `http://服务器IP:8800`（开服器）、`http://服务器IP:9900`（GM），玩家使用 `服务器IP:9100`（UDP）。状态、停止、升级和权限说明见 [Docker 部署文档](LinuxServer/Docker/Docker部署文档.md)。
+默认访问 `http://服务器IP:8800`（开服器）、`http://服务器IP:9900`（GM），玩家使用 `服务器IP:9100`（UDP）。状态、停止、升级和权限说明见 [Docker 部署文档](docs/Docker部署文档.md)。
 
 ## Linux 裸机一键部署
 

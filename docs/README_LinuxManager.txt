@@ -7,12 +7,12 @@ Dread Hunger Linux 独立管理器
 快速启动
 --------
 
-    python3 DreadHungerLinuxManager.pyz --root "$(pwd)"
+    python3 app/开服器/DreadHungerLinuxManager.py --root "$(pwd)"
 
 或：
 
-    chmod +x DreadHungerLinuxManager.sh
-    ./DreadHungerLinuxManager.sh
+    chmod +x app/开服器/DreadHungerLinuxManager.sh
+    ./app/开服器/DreadHungerLinuxManager.sh
 
 默认面板地址：
 
@@ -31,14 +31,14 @@ Windows 图形客户端：
 
 检查文件：
 
-    python3 DreadHungerLinuxManager.pyz --root "$(pwd)" --check
+    python3 app/开服器/DreadHungerLinuxManager.py --root "$(pwd)" --check
 
 需要无 Python 依赖的 Linux ELF 时，在 Linux 上执行：
 
-    chmod +x build_linux_manager.sh
-    ./build_linux_manager.sh
+    chmod +x app/开服器/build_linux_manager.sh
+    ./app/开服器/build_linux_manager.sh
 
-输出文件：`dist/DreadHungerLinuxManager`
+输出文件：`app/开服器/DreadHungerLinuxManager`
 
 首次保存配置后生成 manager_config.json。服务器日志写入 manager_logs，原始游戏日志只读显示。
 启动、停止、重启操作只管理本程序启动的服务器进程组。

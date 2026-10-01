@@ -4,7 +4,7 @@
 
 > 游戏本体需使用与插件匹配的 **Finale 1.2.4 Linux 服务端**。
 
-已在以下环境验证通过:Docker `29.7.2`、Docker Compose `v5.4.0`、系统内核 `6.6.x`。
+旧版部署曾在以下环境验证通过；本次目录调整仍需在目标服务器验收：Docker `29.7.2`、Docker Compose `v5.4.0`、系统内核 `6.6.x`。
 
 ---
 
@@ -40,11 +40,10 @@ LinuxServer/
     ├── compose.yaml
     ├── Dockerfile
     ├── .env.example
-    ├── docker_entrypoint.py
-    ├── frida_loader.py
-    ├── 开服器/
-    ├── GM控制台/
-    └── Linux 插件/
+    ├── app/                     # 程序、注入器和插件
+    ├── config/                  # 配置模板
+    ├── data/                    # 实际配置、日志和运行记录，首次启动生成
+    └── migrate_layout.py        # 旧版部署目录迁移
 ```
 
 > 本项目的目录名可能含空格(如 `Dread Hunger01`)。下文所有 `cd` 都**必须给路径加英文双引号**。
@@ -65,7 +64,7 @@ cd "DreadHunger-LinuxServer/LinuxServer/Docker"
 
 也可以从 [GitHub Releases](https://github.com/van104/DreadHunger-LinuxServer/releases) 下载含 Docker 的新版本 `DreadHunger-Linux-Toolkit.tar.gz` 并解压,进入包内的 `LinuxServer/Docker/`。旧版 Release 若没有该目录,请使用上述分支。
 
-把匹配版本的游戏目录放到 `LinuxServer/Engine/` 和 `LinuxServer/DreadHunger/`,与 `Docker/` 平级。**需要上传完整的 `Docker/` 目录**,其中的 `frida_loader.py` 会由开服器自动启动。已有工具目录也可直接按下方步骤进入。
+把匹配版本的游戏目录放到 `LinuxServer/Engine/` 和 `LinuxServer/DreadHunger/`,与 `Docker/` 平级。**需要上传完整的 `Docker/` 目录**,其中的 `app/frida_loader.py` 会由开服器自动启动。已有工具目录也可直接按下方步骤进入。
 
 ### 3.1 进入工具目录
 
@@ -137,7 +136,7 @@ docker compose ps
 docker compose logs --tail=50
 
 # 容器内查看服务状态
-docker compose exec server /opt/venv/bin/python3 dhctl.py status
+docker compose exec server /opt/venv/bin/python3 /opt/toolkit/app/dhctl.py status
 
 # 宿主机确认端口已监听
 ss -tulnp | grep -E ':(8800|9900|9100)'
@@ -166,7 +165,7 @@ ss -tulnp | grep -E ':(8800|9900|9100)'
 
 ```bash
 # 查看服务状态
-docker compose exec server /opt/venv/bin/python3 dhctl.py status
+docker compose exec server /opt/venv/bin/python3 /opt/toolkit/app/dhctl.py status
 
 # 重启整个容器
 docker compose restart
@@ -181,7 +180,7 @@ docker compose logs -f --tail=100
 docker compose exec server tail -n 100 frida_loader.log
 ```
 
-两个 Web 面板日志分别位于 `.runtime/manager.log` 和 `.runtime/gm.log`。
+两个 Web 面板日志分别位于宿主机 `data/.runtime/manager.log` 和 `data/.runtime/gm.log`；Frida 日志位于 `data/frida_loader.log`。
 
 说明:
 
@@ -194,7 +193,7 @@ docker compose exec server tail -n 100 frida_loader.log
 
 ## 6. 升级
 
-升级时需同步更新 `Docker/` 下的工具文件,然后重新构建:
+升级时更新 `app/`、`config/` 和部署文件，保留 `.env` 与 `data/`，然后重新构建：
 
 ```bash
 cd "/www/wwwroot/Dread Hunger01/LinuxServer/Docker"
@@ -202,6 +201,24 @@ docker compose up -d --build
 ```
 
 ---
+
+
+### 从旧目录升级
+
+旧版把程序与运行文件放在同一层。先在旧部署目录停服并备份，再上传新版文件：
+
+```bash
+docker compose down
+tar --exclude='./data' --exclude='./legacy' -czf ../Docker-before-layout.tar.gz .
+chmod 600 ../Docker-before-layout.tar.gz
+# 此时上传新版 Docker/ 文件，再执行：
+python3 migrate_layout.py
+docker compose up -d --build
+```
+
+迁移脚本把原配置、黑名单、日志和运行记录移入 `data/`，把旧程序与插件放入 `legacy/`，保留 `.env` 与游戏本体；目标已存在时会停止并说明冲突，不覆盖数据。自定义插件从 `legacy/Linux 插件/` 合并到 `app/Linux 插件/`，并保持原来的 `.js` / `.disabled` 启用状态。
+
+需要立即回退时，先停服，备份当前 `data/`，再解压 `../Docker-before-layout.tar.gz` 并按旧方式启动；该归档恢复升级前的程序和配置。回退后若需沿用新配置，可从保留的 `data/` 逐项恢复。
 
 ## 7. 常见问题
 
@@ -246,8 +263,9 @@ Docker 部署**无法替代**游戏版本与插件偏移的匹配检查。请确
 
 | 内容 | 位置 |
 |---|---|
-| 配置、插件、黑名单 | 宿主机 `LinuxServer/Docker/` |
-| 运行记录 `.gm_runtime/`、`manager_logs/`、`.runtime/` | 宿主机 `LinuxServer/Docker/` |
+| 配置、黑名单 | 宿主机 `LinuxServer/Docker/data/` |
+| 插件及启用状态 | 宿主机 `LinuxServer/Docker/app/Linux 插件/` |
+| 运行记录 `.gm_runtime/`、`manager_logs/`、`.runtime/` | 宿主机 `LinuxServer/Docker/data/` |
 | 游戏存档与日志 | 宿主机 `DreadHunger/Saved/` |
 
 - 这些目录均保留在宿主机上,删除容器不会丢失数据。

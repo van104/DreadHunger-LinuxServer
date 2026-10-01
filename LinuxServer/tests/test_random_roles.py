@@ -77,7 +77,7 @@ assert.notEqual(assigned[0], 8, 'Uploaded fixed role must not override random mo
 class RandomRoleTests(unittest.TestCase):
     def test_random_assigns_and_locks_unique_roles_despite_fixed_upload(self):
         for root in (ROOT, ROOT / "Docker"):
-            source = (root / "Linux 插件" / RANDOM_PLUGIN).read_text(encoding="utf-8")
+            source = (root / "app" / "Linux 插件" / RANDOM_PLUGIN).read_text(encoding="utf-8")
             for handle_address in (0x2723F40, 0x26CB970):
                 with self.subTest(root=root.name, handle_address=hex(handle_address)):
                     result = subprocess.run(
@@ -89,7 +89,7 @@ class RandomRoleTests(unittest.TestCase):
 
     def test_loader_prefers_random_and_keeps_fixed_when_random_disabled(self):
         for root in (ROOT, ROOT / "Docker"):
-            spec = importlib.util.spec_from_file_location("role_loader", root / "frida_loader.py")
+            spec = importlib.util.spec_from_file_location("role_loader", root / "app" / "frida_loader.py")
             loader = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(loader)
             for random_enabled in (True, False):

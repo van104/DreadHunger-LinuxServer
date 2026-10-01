@@ -2,6 +2,8 @@
 
 [简体中文](README.md) | **English**
 
+Programs are grouped under `app/`, templates under `config/`, and guides under `docs/`. Docker runtime data lives in `data/`. See [repository layout and upgrade notes (Chinese)](docs/目录结构.md).
+
 **Quick deployment:** [Docker Compose](#one-click-docker-compose-deployment) | [Native Linux](#one-click-native-linux-deployment) | [GitHub downloads](#get-deployment-files-from-github)
 
 This toolkit helps you manage a self-hosted Dread Hunger server on Linux. It includes:
@@ -35,9 +37,9 @@ LinuxServer/
 ├── DreadHunger/                    # Supplied by the user
 │   └── Binaries/Linux/
 │       └── DreadHungerServer-Linux-Shipping
-├── Linux 插件/                     # Linux plugins
-├── 开服器/                         # Server manager
-├── GM控制台/                       # GM console
+├── app/Linux 插件/                     # Linux plugins
+├── app/开服器/                         # Server manager
+├── app/GM控制台/                       # GM console
 ├── install.sh
 └── dhctl.sh
 ```
@@ -74,9 +76,9 @@ docker compose up -d --build
 docker compose logs -f --tail=100
 ```
 
-Keep the entire `Docker/` directory, including `frida_loader.py`, the manager, GM console, and plugins. Compose mounts the game directories from the parent directory; configuration and logs persist on the host. When migrating a native deployment, first run `./dhctl.sh stop` in the original toolkit directory to avoid port conflicts.
+Keep the entire `Docker/` directory, including `app/frida_loader.py`, the manager, GM console, and plugins; runtime settings and logs are stored in `data/`. Compose mounts the game directories from the parent directory; configuration and logs persist on the host. When migrating a native deployment, first run `./dhctl.sh stop` in the original toolkit directory to avoid port conflicts.
 
-Default addresses are `http://SERVER_IP:8800` for the manager, `http://SERVER_IP:9900` for GM, and `SERVER_IP:9100` (UDP) for players. See the [Docker deployment guide (Chinese)](LinuxServer/Docker/Docker部署文档.md) for status, shutdown, upgrades, and permissions.
+Default addresses are `http://SERVER_IP:8800` for the manager, `http://SERVER_IP:9900` for GM, and `SERVER_IP:9100` (UDP) for players. See the [Docker deployment guide (Chinese)](docs/Docker部署文档.md) for status, shutdown, upgrades, and permissions.
 
 ## One-Click Native Linux Deployment
 

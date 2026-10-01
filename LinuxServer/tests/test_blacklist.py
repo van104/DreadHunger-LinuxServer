@@ -20,7 +20,7 @@ def load_module(name: str, path: Path):
 
 gm_module = load_module(
     "gm_console_blacklist_under_test",
-    LINUX_SERVER_ROOT / "GM控制台" / "gm_console.py",
+    LINUX_SERVER_ROOT / "app" / "GM控制台" / "gm_console.py",
 )
 
 

@@ -9,4 +9,4 @@ if [ ! -x "$PYTHON" ]; then
     exit 1
 fi
 
-exec "$PYTHON" "$SCRIPT_DIR/dhctl.py" "${1:-status}"
+exec "$PYTHON" "$SCRIPT_DIR/app/dhctl.py" "${1:-status}"

@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MANAGER_PATH = ROOT / "开服器" / "DreadHungerLinuxManager.py"
+MANAGER_PATH = ROOT / "app" / "开服器" / "DreadHungerLinuxManager.py"
 
 
 def load_manager_module():

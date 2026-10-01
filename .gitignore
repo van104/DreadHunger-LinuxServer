@@ -10,6 +10,8 @@
 !/LICENSE
 !/.github/
 !/.github/**
+!/docs/
+!/docs/**
 !/LinuxServer/
 !/WindowsRemote/
 !/WindowsRemote/**
@@ -79,3 +81,7 @@ output.log
 DreadHunger.log
 *.tmp
 *.bak
+
+/LinuxServer/app/Linux 插件/备份/
+/LinuxServer/app/开服器/manager_config.json
+/LinuxServer/app/开服器/.dread_hunger_manager_state.json

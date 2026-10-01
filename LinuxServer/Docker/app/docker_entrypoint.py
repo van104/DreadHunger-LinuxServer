@@ -15,6 +15,7 @@ import dhctl
 
 
 def write_json(path: Path, value: dict, mode: int = 0o644) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_name(path.name + ".tmp")
     temp.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     temp.chmod(mode)
@@ -28,7 +29,8 @@ def prepare_config() -> dict:
         missing = [name for name in required if not os.environ.get(name)]
         if missing:
             raise dhctl.ControlError("首次 Docker 启动缺少环境变量：" + ", ".join(missing))
-    source = dhctl.CONFIG_PATH if dhctl.CONFIG_PATH.is_file() else root / "deploy_config.example.json"
+    templates = Path(__file__).resolve().parent.parent / "config"
+    source = dhctl.CONFIG_PATH if dhctl.CONFIG_PATH.is_file() else templates / "deploy_config.example.json"
     value = json.loads(source.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
         raise dhctl.ControlError("部署配置必须是 JSON 对象")
@@ -45,12 +47,12 @@ def prepare_config() -> dict:
 
     manager_path = root / "开服器" / "manager_config.json"
     if not manager_path.is_file() and not (root / "manager_config.json").is_file():
-        manager = json.loads((manager_path.parent / "manager_config.example.json").read_text(encoding="utf-8"))
+        manager = json.loads((templates / "manager_config.example.json").read_text(encoding="utf-8"))
         manager["server_port"] = config["game_port"]
         write_json(manager_path, manager)
     announce = root / "GM控制台" / "gm_announce.json"
     if not announce.is_file():
-        write_json(announce, json.loads(announce.with_name("gm_announce.example.json").read_text(encoding="utf-8")))
+        write_json(announce, json.loads((templates / "gm_announce.example.json").read_text(encoding="utf-8")))
     return config
 
 
@@ -93,6 +95,9 @@ def main() -> int:
             raise dhctl.ControlError("此入口应由 Linux Docker 容器以 root 启动；游戏进程会降权运行")
         if not dhctl.SERVER_BINARY.is_file() or not (dhctl.ROOT / "Engine").is_dir():
             raise dhctl.ControlError("请先将匹配版本的 DreadHunger/ 和 Engine/ 放入 LinuxServer/")
+        launcher = dhctl.ROOT / "DreadHungerServer.sh"
+        if not launcher.exists() and not launcher.is_symlink():
+            launcher.symlink_to(Path(__file__).resolve().parents[1] / "DreadHungerServer.sh")
         config = prepare_config()
         prepare_permissions()
         run_foreground(config)

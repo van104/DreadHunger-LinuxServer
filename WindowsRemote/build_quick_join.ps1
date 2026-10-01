@@ -14,11 +14,11 @@ try {
     python -m PyInstaller --noconfirm --clean --onefile --windowed `
         --name "DreadHungerQuickJoin" `
         --icon (Join-Path $ProjectDir "assets\quick_join_icon.ico") `
-        --add-data "$ProjectDir\connect_client_win64.js;." `
+        --add-data "$ProjectDir\app\connect_client_win64.js;." `
         --add-data "$ProjectDir\assets\quick_join_icon.png;assets" `
         --add-data "$ProjectDir\assets\quick_join_icon.ico;assets" `
         --distpath $DistDir --workpath $BuildDir `
-        --specpath (Join-Path $ProjectDir ".pyinstaller-build") "quick_join_client.py"
+        --specpath (Join-Path $ProjectDir ".pyinstaller-build") "app/quick_join_client.py"
     if ($LASTEXITCODE -ne 0) { throw "快速进服器打包失败" }
 
     Copy-Item -LiteralPath (Join-Path $ProjectDir "..\LICENSE") -Destination (Join-Path $DistDir "LICENSE")

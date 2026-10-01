@@ -14,13 +14,13 @@ try {
     python -m PyInstaller --noconfirm --clean --onefile --windowed `
         --name "DreadHungerLinuxRemoteManager" `
         --distpath $DistDir --workpath (Join-Path $BuildDir "manager") `
-        --specpath $BuildDir "server_manager_client.py"
+        --specpath $BuildDir "app/server_manager_client.py"
     if ($LASTEXITCODE -ne 0) { throw "开服器客户端打包失败" }
 
     python -m PyInstaller --noconfirm --clean --onefile --windowed `
         --name "DreadHungerLinuxGMConsole" `
         --distpath $DistDir --workpath (Join-Path $BuildDir "gm") `
-        --specpath $BuildDir "gm_console_client.py"
+        --specpath $BuildDir "app/gm_console_client.py"
     if ($LASTEXITCODE -ne 0) { throw "GM 控制台客户端打包失败" }
 
     Copy-Item -LiteralPath (Join-Path $ProjectDir "..\LICENSE") -Destination (Join-Path $DistDir "LICENSE")

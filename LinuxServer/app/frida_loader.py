@@ -301,12 +301,12 @@ def discover_root(explicit: Path | None) -> Path:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Dread Hunger Linux frida 注入器")
     parser.add_argument("--root", type=Path, default=None, help="LinuxServer 目录 (默认自动从当前目录和脚本目录查找)")
-    parser.add_argument("--plugins-dir", type=Path, default=None, help="插件目录 (默认 <root>/Linux 插件)")
+    parser.add_argument("--plugins-dir", type=Path, default=None, help="插件目录 (默认 <root>/app/Linux 插件；兼容旧目录)")
     parser.add_argument("--check", action="store_true", help="检查环境, 不启动注入")
     args = parser.parse_args()
 
     root = discover_root(args.root)
-    plugins_dir = (args.plugins_dir.expanduser().resolve() if args.plugins_dir else None) or (root / "Linux 插件")
+    plugins_dir = (args.plugins_dir.expanduser().resolve() if args.plugins_dir else None) or (root / "app" / "Linux 插件" if (root / "app" / "Linux 插件").is_dir() else root / "Linux 插件")
     if not plugins_dir.is_dir():
         print("错误: 插件目录不存在: %s" % plugins_dir)
         return 1

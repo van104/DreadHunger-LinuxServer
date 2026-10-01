@@ -20,11 +20,11 @@ def load_module(name: str, path: Path):
     return module
 
 
-frida_loader = load_module("frida_loader_under_test", LINUX_SERVER_ROOT / "frida_loader.py")
-dhctl_module = load_module("dhctl_under_test", LINUX_SERVER_ROOT / "dhctl.py")
+frida_loader = load_module("frida_loader_under_test", LINUX_SERVER_ROOT / "app" / "frida_loader.py")
+dhctl_module = load_module("dhctl_under_test", LINUX_SERVER_ROOT / "app" / "dhctl.py")
 manager_module = load_module(
     "manager_under_test",
-    LINUX_SERVER_ROOT / "开服器" / "DreadHungerLinuxManager.py",
+    LINUX_SERVER_ROOT / "app" / "开服器" / "DreadHungerLinuxManager.py",
 )
 
 

@@ -2879,7 +2879,7 @@ class GMHTTPServer(ThreadingHTTPServer):
 def discover_root(explicit: Optional[Path]) -> Path:
     if explicit is not None:
         return explicit.expanduser().resolve()
-    for candidate in [Path.cwd(), Path(__file__).resolve().parent, Path(__file__).resolve().parent.parent]:
+    for candidate in [Path.cwd(), Path(__file__).resolve().parent, Path(__file__).resolve().parent.parent, Path(__file__).resolve().parents[2]]:
         if (candidate / "DreadHunger").is_dir() or (candidate / "Linux 插件").is_dir():
             return candidate.resolve()
     return Path.cwd().resolve()

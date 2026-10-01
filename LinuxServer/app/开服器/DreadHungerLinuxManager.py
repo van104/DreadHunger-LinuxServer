@@ -94,6 +94,7 @@ def discover_root(explicit: Optional[Path]) -> Path:
     try:
         candidates.append(Path(__file__).resolve().parent)
         candidates.append(Path(__file__).resolve().parent.parent)
+        candidates.append(Path(__file__).resolve().parents[2])
     except OSError:
         pass
 
@@ -400,9 +401,8 @@ class ServerManager:
                 import pwd
 
                 try:
-                    server_user = os.environ.get("DH_SERVER_USER", "www")
-                    pwd.getpwnam(server_user)
-                    command = ["runuser", "-u", server_user, "--"] + command
+                    pwd.getpwnam("www")
+                    command = ["runuser", "-u", "www", "--"] + command
                 except KeyError:
                     pass
             self.log_handle = log_path.open("ab")
@@ -534,7 +534,7 @@ class ServerManager:
 
         python = self._frida_python()
         log_path = self.root / "frida_loader.log"
-        command = [python, "frida_loader.py", "--root", str(self.root)]
+        command = [python, str(Path(__file__).resolve().parent.parent / "frida_loader.py"), "--root", str(self.root)]
         if os.name == "posix" and os.geteuid() == 0:
             import pwd
             try:
@@ -611,7 +611,7 @@ class ServerManager:
 
             python = self._frida_python()
             log_path = self.root / "frida_loader.log"
-            command = [python, "frida_loader.py", "--root", str(self.root)]
+            command = [python, str(Path(__file__).resolve().parent.parent / "frida_loader.py"), "--root", str(self.root)]
             if os.name == "posix" and os.geteuid() == 0:
                 import pwd
 
@@ -655,6 +655,8 @@ class ServerManager:
     def _source_dir(self) -> Path:
         source_name = self.config.get("patch_source", "Linux 插件")
         source = (self.root / source_name).resolve()
+        if source_name == "Linux 插件" and (self.root / "app" / source_name).is_dir():
+            source = (self.root / "app" / source_name).resolve()
         if not source.is_dir():
             if (self.root / "Linux 插件").is_dir():
                 source = (self.root / "Linux 插件").resolve()
@@ -667,7 +669,7 @@ class ServerManager:
         if suffix in {".pak", ".sig"}:
             return self.root / "DreadHunger" / "Content" / "Paks" / name
         if self.config.get("patch_source") == "Linux 插件" or not (self.root / "DreadHunger" / "Binaries" / "Linux" / "Patches").is_dir():
-            return self.root / "Linux 插件" / name
+            return self._source_dir() / name
         return self.root / "DreadHunger" / "Binaries" / "Linux" / "Patches" / name
 
     def patches(self) -> List[Dict[str, Any]]:
@@ -835,7 +837,6 @@ class ServerManager:
         paths.extend(
             [
                 self.root / "DreadHunger" / "Binaries" / "Linux" / "output.log",
-                self.root / "DreadHunger" / "log" / "DreadHunger.log",
                 self.root / "DreadHunger" / "Saved" / "Logs" / "DreadHunger.log",
                 self.root / "DreadHunger" / "Binaries" / "Linux" / "player.log",
                 self.root / "output.log",

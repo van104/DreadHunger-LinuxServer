@@ -4,8 +4,8 @@
 
 | 文件 | 位置 | 用途 |
 |------|------|------|
-| `gm_console.py` | LinuxServer/GM控制台/ | Web 面板服务，提供浏览器操作界面 |
-| `[服务端]GM控制台_Linux.js` | LinuxServer/Linux 插件/ | Frida 插件，在游戏进程内执行 GM 操作 |
+| `gm_console.py` | LinuxServer/app/GM控制台/ | Web 面板服务，提供浏览器操作界面 |
+| `[服务端]GM控制台_Linux.js` | LinuxServer/app/Linux 插件/ | Frida 插件，在游戏进程内执行 GM 操作 |
 
 运行时自动生成的文件：
 
@@ -28,16 +28,16 @@
 
 ```
 LinuxServer/
-├── GM控制台/
+├── app/GM控制台/
 │   ├── gm_console.py
 │   └── gm_console.sh
-├── Linux 插件/
+├── app/Linux 插件/
 │   ├── [服务端]GM控制台_Linux.js            ← 上传到这里
 │   ├── 黑名单_Linux.js              (已有)
 │   ├── 系统公告_Linux.js            (已有)
 │   └── ...
-├── frida_loader.py                  (已有)
-├── DreadHungerLinuxManager.py       (已有)
+├── app/frida_loader.py              (已有)
+├── app/开服器/DreadHungerLinuxManager.py (已有)
 └── DreadHungerServer.sh             (已有)
 ```
 
@@ -48,11 +48,11 @@ LinuxServer/
 ### 3. 启动 Frida 注入器
 
 如果你用的是 `DreadHungerLinuxManager.py`，点"重启注入器"即可。
-`frida_loader.py` 会自动扫描 `Linux 插件/` 目录并注入 `[服务端]GM控制台_Linux.js`。
+`frida_loader.py` 会自动扫描 `app/Linux 插件/` 目录并注入 `[服务端]GM控制台_Linux.js`。
 
 手动启动：
 ```bash
-python3 frida_loader.py --root /path/to/LinuxServer
+python3 app/frida_loader.py --root /path/to/LinuxServer
 ```
 
 看到以下日志说明 GM 插件加载成功：
@@ -65,13 +65,13 @@ python3 frida_loader.py --root /path/to/LinuxServer
 
 ```bash
 # 基本启动（默认密码 admin，端口 9900）
-python3 GM控制台/gm_console.py
+python3 app/GM控制台/gm_console.py
 
 # 指定密码（强烈建议）
-python3 GM控制台/gm_console.py --password 你的密码
+python3 app/GM控制台/gm_console.py --password 你的密码
 
 # 完整参数
-python3 GM控制台/gm_console.py --root /path/to/LinuxServer --host 0.0.0.0 --port 9900 --password MySecretPass
+python3 app/GM控制台/gm_console.py --root /path/to/LinuxServer --host 0.0.0.0 --port 9900 --password MySecretPass
 ```
 
 启动成功输出：
@@ -86,11 +86,11 @@ python3 GM控制台/gm_console.py --root /path/to/LinuxServer --host 0.0.0.0 --p
 
 ```bash
 # 使用 nohup
-nohup python3 GM控制台/gm_console.py --password 你的密码 > gm_console.log 2>&1 &
+nohup python3 app/GM控制台/gm_console.py --password 你的密码 > gm_console.log 2>&1 &
 
 # 或使用 screen
 screen -S gm
-python3 GM控制台/gm_console.py --password 你的密码
+python3 app/GM控制台/gm_console.py --password 你的密码
 # Ctrl+A D 分离
 # screen -r gm 恢复
 ```

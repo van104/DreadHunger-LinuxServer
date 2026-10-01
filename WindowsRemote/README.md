@@ -21,7 +21,7 @@
 
 ## 固定大厅职业
 
-1. Linux 服务端启用 `[服务端]固定职业_Linux.js`；`[服务端]随机职业Plus_Linux.js` 可以保持启用，检测到有效固定名单后会自动让出分配。
+1. Linux 服务端启用 `[服务端]固定职业_Linux.js`，并关闭 `[服务端]随机职业Plus_Linux.js`；随机职业开启时，注入器会跳过固定职业插件。
 2. 快速进服器填写 GM 端口和查询令牌，并勾选“同步大厅职业并由服务器固定分配”。
 3. 八名玩家在客户端大厅选好互不重复的职业后点击进入。快速进服器先调用客户端连接器的 `GetFixedRoles` 读取“玩家 UID—职业”名单，再上传到 `/api/fixed-roles`。
 4. Linux 插件按玩家 UID 分配对应职业并跳过服务器第二次选人。名单十分钟后失效；读取、上传或分配失败时不会猜测职业。
@@ -33,13 +33,13 @@
 开服管理 API（默认端口 `8800`）：
 
 ```bash
-python3 开服器/DreadHungerLinuxManager.py --root . --host 0.0.0.0 --web-port 8800 --password "请设置强密码"
+python3 app/开服器/DreadHungerLinuxManager.py --root . --host 0.0.0.0 --web-port 8800 --password "请设置强密码"
 ```
 
 GM API（示例端口 `9900`）：
 
 ```bash
-python3 GM控制台/gm_console.py --root . --host 0.0.0.0 --port 9900 --password "请设置另一个强密码"
+python3 app/GM控制台/gm_console.py --root . --host 0.0.0.0 --port 9900 --password "请设置另一个强密码"
 ```
 
 在云服务器安全组/防火墙中只向可信管理 IP 放行 TCP 8800 和 9900。更安全的做法是让服务只监听 `127.0.0.1`，然后在 Windows 建 SSH 隧道：

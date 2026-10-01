@@ -13,9 +13,9 @@ from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location("docker_entrypoint_under_test", ROOT / "docker_entrypoint.py")
+spec = importlib.util.spec_from_file_location("docker_entrypoint_under_test", ROOT / "app" / "docker_entrypoint.py")
 entrypoint = importlib.util.module_from_spec(spec)
-with mock.patch.object(sys, "path", [str(ROOT), *sys.path]):
+with mock.patch.object(sys, "path", [str(ROOT / "app"), *sys.path]):
     spec.loader.exec_module(entrypoint)
 dhctl = entrypoint.dhctl
 
@@ -28,11 +28,11 @@ class DockerEntrypointTests(unittest.TestCase):
             console = root / "GM控制台"
             manager.mkdir()
             console.mkdir()
-            for source in (ROOT / "deploy_config.example.json", ROOT / "GM控制台" / "gm_announce.example.json"):
-                destination = root / source.name if source.parent == ROOT else console / source.name
+            for source in (ROOT / "config" / "deploy_config.example.json", ROOT / "config" / "gm_announce.example.json"):
+                destination = root / source.name if source.name == "deploy_config.example.json" else console / source.name
                 destination.write_bytes(source.read_bytes())
             (manager / "manager_config.example.json").write_bytes(
-                (ROOT / "开服器" / "manager_config.example.json").read_bytes()
+                (ROOT / "config" / "manager_config.example.json").read_bytes()
             )
             settings = {"map": "Approach_Persistent", "server_port": 9200, "maxplayers": 16}
             manager_config = manager / "manager_config.json"

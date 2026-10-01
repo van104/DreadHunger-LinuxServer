@@ -14,10 +14,8 @@ services:
       - .env
     volumes:
       - type: bind
-        source: .
+        source: ./data
         target: /server
-        bind:
-          create_host_path: false
       - type: bind
         source: ../Engine
         target: /server/Engine
@@ -26,5 +24,10 @@ services:
       - type: bind
         source: ../DreadHunger
         target: /server/DreadHunger
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./app/Linux 插件
+        target: /server/Linux 插件
         bind:
           create_host_path: false

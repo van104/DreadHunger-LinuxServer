@@ -17,3 +17,6 @@ __pycache__/
 *.log
 *.pid
 *.tmp
+data/
+legacy/
+app/**/manager_config.json
