@@ -9,13 +9,15 @@ This toolkit helps you manage a self-hosted Dread Hunger server on Linux. It inc
 - A Frida injector and server-side plugins.
 - Windows clients for server management, GM administration, and quick joining.
 - Linux scripts for one-click installation, startup, shutdown, and status checks.
+- Docker Compose deployment with the game server, manager, GM console, and Frida in one container.
 
 > Compatibility: The plugin memory offsets currently target the Dread Hunger Finale 1.2.4 Linux server build. If the game binary is updated, the offsets must be verified again. Do not inject these plugins into an unknown version.
 
 ## Requirements
 
 - At least 4 GB of RAM is recommended. Configure swap on low-memory systems because the game server, two web services, and Frida run at the same time.
-- Python 3.10+, `venv`, and `pip` are required. If dependencies are missing, the installer will use `apt-get`, `dnf`, or `yum`, so root access or working `sudo` access is required.
+- Native deployment requires Python 3.10+, `venv`, and `pip`. If dependencies are missing, the installer will use `apt-get`, `dnf`, or `yum`, so root access or working `sudo` access is required.
+- Docker deployment requires Linux x86_64, Docker Engine, and the Compose plugin (`docker compose`). Python and Frida are installed in the image.
 - Installing Frida requires access to PyPI. If PyPI is slow or unavailable in your region, set the standard `PIP_INDEX_URL` environment variable to a suitable mirror before running the installer.
 - The installer only checks that the server directories and binary exist; it does not verify the game version. Confirm manually that your server is Finale 1.2.4 before starting. Do not inject the included plugins into other versions.
 
@@ -38,7 +40,43 @@ LinuxServer/
 └── dhctl.sh
 ```
 
-## One-Click Linux Deployment
+## Get Deployment Files from GitHub
+
+Download and extract `DreadHunger-Linux-Toolkit.tar.gz` from [GitHub Releases](https://github.com/van104/DreadHunger-LinuxServer/releases). New releases containing Docker support include both the native scripts and `LinuxServer/Docker/`; older releases may not include this directory.
+
+Docker support currently lives on the `codex/docker-deployment-bundle` branch. To obtain it directly:
+
+```bash
+git clone --depth 1 --branch codex/docker-deployment-bundle \
+  https://github.com/van104/DreadHunger-LinuxServer.git "DreadHunger-LinuxServer"
+cd "DreadHunger-LinuxServer"
+```
+
+Both deployment methods require you to place matching `Engine/` and `DreadHunger/` directories in `LinuxServer/`.
+
+## One-Click Docker Compose Deployment
+
+Install Docker Engine and the Compose plugin on a Linux server, then run these commands from the repository or extracted toolkit root:
+
+```bash
+cd "LinuxServer/Docker"
+cp .env.example .env
+chmod 600 .env
+nano .env
+```
+
+Set `DH_PUBLIC_HOST`, `DH_MANAGER_PASSWORD`, and `DH_GM_PASSWORD`. The two passwords must each contain at least 8 characters and must be different. Start the services:
+
+```bash
+docker compose up -d --build
+docker compose logs -f --tail=100
+```
+
+Keep the entire `Docker/` directory, including `frida_loader.py`, the manager, GM console, and plugins. Compose mounts the game directories from the parent directory; configuration and logs persist on the host. When migrating a native deployment, first run `./dhctl.sh stop` in the original toolkit directory to avoid port conflicts.
+
+Default addresses are `http://SERVER_IP:8800` for the manager, `http://SERVER_IP:9900` for GM, and `SERVER_IP:9100` (UDP) for players. See the [Docker deployment guide (Chinese)](LinuxServer/Docker/Docker部署文档.md) for status, shutdown, upgrades, and permissions.
+
+## One-Click Native Linux Deployment
 
 1. Download and extract `DreadHunger-Linux-Toolkit.tar.gz` from GitHub Releases.
 2. Copy the matching `Engine/` and `DreadHunger/` directories into `LinuxServer/`.
@@ -119,8 +157,8 @@ Players can download `DreadHungerQuickJoin.exe` from the GitHub Release and ente
 ## Plugin Changes and Upgrades
 
 - The injector reads plugin files only when it establishes a Frida session. After adding, deleting, renaming, or editing a plugin, click **Restart Injector** in the server manager, or wait until the current match ends and the next injection begins, before the change takes effect.
-- Before upgrading, run `./dhctl.sh stop` and back up `deploy_config.json`, `开服器/manager_config.json`, the GM blacklist, and any custom plugins. Replace the program files, then run `./install.sh` again.
-- The current injector finds the game server by process name, so running multiple instances reliably on one machine is not supported. Do not start multiple server instances at the same time; even with different ports, Frida may inject into the wrong process.
+- Before upgrading a native deployment, run `./dhctl.sh stop` and back up `deploy_config.json`, `开服器/manager_config.json`, the GM blacklist, and any custom plugins. Replace the program files, then run `./install.sh` again. For Docker deployments, follow the guide linked above.
+- In native deployments, the injector finds the game server by process name, so running multiple instances reliably on one machine is not supported. Do not start multiple server instances at the same time; even with different ports, Frida may inject into the wrong process. Docker instances isolate processes but still require separate toolkit and game directories and different ports.
 
 ## Build the Windows EXE Files from Source
 
@@ -137,7 +175,7 @@ Build artifacts are written to `WindowsRemote/dist/`.
 
 ## Create a GitHub Release
 
-The repository includes `.github/workflows/release.yml`. After you push a version tag beginning with `v`, GitHub Actions builds the three Windows EXE files, packages the Linux toolkit, and uploads all artifacts to the matching Release:
+The repository includes `.github/workflows/release.yml`. After you push a version tag beginning with `v`, GitHub Actions builds the three Windows EXE files, validates Docker Compose configuration, builds the image, and uploads the Linux toolkit including `LinuxServer/Docker/` to the matching Release. Tag a commit containing both the Docker files and this release workflow:
 
 ```bash
 git tag v1.0.0

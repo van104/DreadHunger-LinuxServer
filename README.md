@@ -9,13 +9,15 @@
 - Frida 注入器与服务端插件。
 - Windows 开服器客户端、GM 客户端和快速进服器。
 - Linux 一键安装、启动、停止和状态检查脚本。
+- Docker Compose 部署：在一个容器内运行游戏服、开服器、GM 控制台和 Frida。
 
 > 兼容性提示：当前插件内存偏移针对 Dread Hunger Finale 1.2.4 Linux 服务端构建。游戏二进制更新后必须重新核对偏移，不能直接注入未知版本。
 
 ## 部署要求
 
 - 建议至少 4 GB 内存；内存较小时请配置 Swap，游戏服、两个 Web 服务和 Frida 会同时占用内存。
-- 需要 Python 3.10+、`venv` 和 `pip`。缺少依赖时安装脚本会调用 `apt-get`、`dnf` 或 `yum`，因此需要 root 或可用的 `sudo`。
+- 裸机部署需要 Python 3.10+、`venv` 和 `pip`。缺少依赖时安装脚本会调用 `apt-get`、`dnf` 或 `yum`，因此需要 root 或可用的 `sudo`。
+- Docker 部署需要 Linux x86_64、Docker Engine 和 Compose 插件（`docker compose`）；Python 和 Frida 由镜像安装。
 - 安装 Frida 需要访问 PyPI。国内网络可在运行安装脚本前设置标准的 `PIP_INDEX_URL` 镜像变量。
 - 安装脚本只检查服务端目录和二进制是否存在，不校验游戏版本。启动前请人工确认服务端为 Finale 1.2.4；其他版本不要注入本仓库插件。
 
@@ -38,7 +40,43 @@ LinuxServer/
 └── dhctl.sh
 ```
 
-## Linux 一键部署
+## 从 GitHub 获取部署文件
+
+可以从 [GitHub Releases](https://github.com/van104/DreadHunger-LinuxServer/releases) 下载 `DreadHunger-Linux-Toolkit.tar.gz` 并解压。包含 Docker 的新版本工具包同时提供裸机脚本和 `LinuxServer/Docker/`；旧版 Release 可能不包含该目录。
+
+当前 Docker 代码位于 `codex/docker-deployment-bundle` 分支，可直接获取：
+
+```bash
+git clone --depth 1 --branch codex/docker-deployment-bundle \
+  https://github.com/van104/DreadHunger-LinuxServer.git "DreadHunger-LinuxServer"
+cd "DreadHunger-LinuxServer"
+```
+
+两种部署方式都需自行把匹配版本的 `Engine/` 和 `DreadHunger/` 放入 `LinuxServer/`。
+
+## Docker Compose 一键部署
+
+在 Linux 服务器安装 Docker Engine 和 Compose 插件后，从仓库或解压后的工具包根目录执行：
+
+```bash
+cd "LinuxServer/Docker"
+cp .env.example .env
+chmod 600 .env
+nano .env
+```
+
+填写公网 IP/域名 `DH_PUBLIC_HOST`、开服器密码 `DH_MANAGER_PASSWORD` 和 GM 密码 `DH_GM_PASSWORD`；两个密码至少 8 位且必须不同，然后启动：
+
+```bash
+docker compose up -d --build
+docker compose logs -f --tail=100
+```
+
+整个 `Docker/` 目录都需要保留，包括 `frida_loader.py`、开服器、GM 控制台与插件。Compose 挂载上一级的游戏目录，配置和日志保留在宿主机。迁移已有裸机服务时，先在原工具目录运行 `./dhctl.sh stop`，避免端口冲突。
+
+默认访问 `http://服务器IP:8800`（开服器）、`http://服务器IP:9900`（GM），玩家使用 `服务器IP:9100`（UDP）。状态、停止、升级和权限说明见 [Docker 部署文档](LinuxServer/Docker/Docker部署文档.md)。
+
+## Linux 裸机一键部署
 
 1. 从 GitHub Releases 下载 `DreadHunger-Linux-Toolkit.tar.gz` 并解压。
 2. 把匹配版本的 `Engine/` 与 `DreadHunger/` 放入 `LinuxServer/`。
@@ -119,8 +157,8 @@ sudo firewall-cmd --reload
 ## 插件修改与升级
 
 - 注入器只在建立 Frida 会话时读取插件文件。新增、删除、改名或修改插件内容后，需要在开服器点击“重启注入器”，或等待本局结束后下一次注入，改动才会生效。
-- 升级前先执行 `./dhctl.sh stop`，并备份 `deploy_config.json`、`开服器/manager_config.json`、GM 黑名单和自定义插件；替换程序文件后重新运行 `./install.sh`。
-- 当前注入器按进程名查找游戏服，同一台机器不支持可靠运行多个实例。请避免同时启动多个服务端；否则即使端口不同，也可能注入到错误进程。
+- 裸机部署升级前先执行 `./dhctl.sh stop`，并备份 `deploy_config.json`、`开服器/manager_config.json`、GM 黑名单和自定义插件；替换程序文件后重新运行 `./install.sh`。Docker 部署按上方文档升级。
+- 裸机部署时，注入器按进程名查找游戏服，同一台机器不支持可靠运行多个实例。请避免同时启动多个服务端；否则即使端口不同，也可能注入到错误进程。Docker 实例之间隔离进程，但仍需独立的工具目录、游戏目录和不同端口。
 
 ### 常驻山顶飞天甘油训练房间
 
@@ -145,7 +183,7 @@ python -m pip install pyinstaller
 
 ## 创建 GitHub Release
 
-仓库自带 `.github/workflows/release.yml`。推送 `v` 开头的版本标签后，GitHub Actions 会构建三个 Windows EXE、打包 Linux 工具包并上传到对应 Release：
+仓库自带 `.github/workflows/release.yml`。推送 `v` 开头的版本标签后，GitHub Actions 会构建三个 Windows EXE，校验 Docker Compose 配置并构建镜像，将包含 `LinuxServer/Docker/` 的 Linux 工具包上传到对应 Release。请在包含 Docker 文件和该发布流程的提交上打标签：
 
 ```bash
 git tag v1.0.0
