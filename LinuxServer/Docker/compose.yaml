@@ -1,0 +1,30 @@
+services:
+  server:
+    build: .
+    platform: linux/amd64
+    init: true
+    network_mode: host
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+    restart: unless-stopped
+    stop_grace_period: 60s
+    env_file:
+      - .env
+    volumes:
+      - type: bind
+        source: .
+        target: /server
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../Engine
+        target: /server/Engine
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../DreadHunger
+        target: /server/DreadHunger
+        bind:
+          create_host_path: false

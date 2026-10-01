@@ -1,0 +1,9 @@
+{
+  "public_host": "server.example.com",
+  "bind_host": "0.0.0.0",
+  "manager_port": 8800,
+  "gm_port": 9900,
+  "game_port": 9100,
+  "manager_password": "请在安装时设置",
+  "gm_password": "请在安装时设置另一个密码"
+}

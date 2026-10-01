@@ -1,0 +1,17 @@
+*
+!LICENSE
+!requirements-linux.txt
+!dhctl.py
+!frida_loader.py
+!DreadHungerServer.sh
+!docker_entrypoint.py
+!deploy_config.example.json
+!开服器/
+!开服器/DreadHungerLinuxManager.py
+!开服器/manager_config.example.json
+!GM控制台/
+!GM控制台/gm_console.py
+!GM控制台/gm_announce.example.json
+!Linux 插件/
+!Linux 插件/*.js
+!Linux 插件/*.disabled
