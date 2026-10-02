@@ -17,14 +17,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from remote_common import (
-    ACCENT,
-    BG,
-    BORDER,
-    MUTED,
-    PANEL,
-    SUCCESS,
-    TEXT,
-    WARNING,
+    ApiError,
     AsyncRunner,
     RemoteApi,
     apply_dark_theme,
@@ -36,23 +29,30 @@ from remote_common import (
 
 
 APP_ID = "1418630"
-QUICK_JOIN_VERSION = "1.7.1"
+QUICK_JOIN_NAME = "恐惧饥饿进服器"
+QUICK_JOIN_VERSION = "2.0.0"
+BG = "#EEF3F6"
+PANEL = "#FFFFFF"
+TEXT = "#172C3D"
+MUTED = "#667B88"
+ACCENT = "#087E95"
+BORDER = "#D8E3E9"
+APP_USER_MODEL_ID = "van104.DreadHungerQuickJoin.2.0.0"
 DEFAULT_ADDRESS = "127.0.0.1:9100"
 DEFAULT_CLIENT = Path(r"E:\Dread Hunger\DreadHunger.exe")
 GAME_PROCESS_NAMES = ("DreadHunger-Win64-Shipping.exe", "DreadHunger.exe")
 CLIENT_BRIDGE_PORT = 54730
 CLIENT_BRIDGE_TIMEOUT_SECONDS = 2
-CLIENT_BRIDGE_ACK_SECONDS = 0.35
+CLIENT_BRIDGE_ACK_SECONDS = 2.0
 GAME_LOG = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "DreadHunger" / "Saved" / "Logs" / "DreadHunger.log"
 TRACE_LOG = GAME_LOG.with_name("QuickJoinTrace.log")
-JOIN_STABLE_SECONDS = 15
 ANNOUNCEMENT_FOCUS_DELAY_MS = 300
 PRE_JOIN_ANNOUNCEMENT_DELAY_MS = 3000
 BLACKLIST_WARNING_DELAY_MS = 5000
 BLACKLIST_SUCCESS_DELAY_MS = 1000
 # The client bridge accepts a message immediately, but the game renders it on
-# a later game-thread tick.  Keep the checking notice on its own long enough
-# that the result cannot replace it before the HUD has drawn it.
+# a later game-thread tick.  Keep the checking notice and announcement visible
+# long enough that the result cannot replace them before the HUD has drawn them.
 BLACKLIST_CHECK_MIN_RESULT_MS = 6000
 LOBBY_NOTICE_RESULT_MS = 6500
 CHECKING_NOTICE_OVERLAY_MS = 5200
@@ -60,6 +60,7 @@ JOIN_RETRY_DELAY_MS = 3000
 LOBBY_STABLE_SECONDS = 5
 HISTORY_LIMIT = 20
 CLIENT_BRIDGE_HOOK_FILENAME = "connect_client_win64.js"
+CLIENT_NOTICE_HOOK_FILENAME = "quick_join_announce_hook.js"
 DEFAULT_ANNOUNCEMENT = "欢迎来到服务器，祝你游戏愉快！"
 DEFAULT_GM_PORT = 9900
 CLIENT_ROLE_TYPES = {
@@ -104,12 +105,14 @@ def log_reports_game_map(text: str) -> bool:
 
 
 def log_reports_join_complete(text: str) -> bool:
-    if "LogNet: Join succeeded:" in text:
-        return True
-    return any(
-        "LogLoad: Took " in line and "LoadMap(" in line and "Departure_Persistent" in line
-        for line in text.splitlines()
-    )
+    for line in reversed(text.splitlines()):
+        if log_reports_join_failure(line):
+            return False
+        if "LogNet: Join succeeded:" in line or (
+            "LogLoad: Took " in line and "LoadMap(" in line and "Departure_Persistent" in line
+        ):
+            return True
+    return False
 
 
 def log_reports_lobby_ready(text: str) -> bool:
@@ -344,12 +347,8 @@ def format_preflight_block_notice(matches: object) -> str:
     return text
 
 
-def format_preflight_clear_notice(announcement: str = "") -> str:
-    text = "检测完成，未发现黑名单用户。"
-    clean_announcement = str(announcement or "").strip()
-    if clean_announcement:
-        text += "｜公告：" + compact_game_text(clean_announcement, 24)
-    return text
+def format_preflight_clear_notice() -> str:
+    return "检测完成，未发现黑名单用户。"
 
 
 def resource_path(name: str) -> Path:
@@ -357,6 +356,17 @@ def resource_path(name: str) -> Path:
     if name.startswith("assets/") and not hasattr(sys, "_MEIPASS"):
         root = root.parent
     return root / name
+
+
+def set_windows_app_user_model_id() -> None:
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_USER_MODEL_ID)
+    except (AttributeError, OSError):
+        pass
 
 
 def client_win64_directory(executable: Path) -> Path:
@@ -402,6 +412,15 @@ def normalize_server_address(value: str) -> str:
     if not 1 <= port <= 65535:
         raise ValueError("端口必须在 1-65535 之间")
     return "%s:%d" % (normalized_host, port)
+
+
+def normalize_query_token(value: object) -> str:
+    token = str(value or "").strip()
+    if not token:
+        raise ValueError("尚未填写 GM 控制台生成的只读查询令牌")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{24,}", token):
+        raise ValueError("查询令牌格式不正确；请从 GM 控制台黑名单页重新复制只读查询令牌")
+    return token
 
 
 def _registry_steam_roots() -> list[Path]:
@@ -550,6 +569,31 @@ def resolve_host(address: str) -> str:
     return infos[0][4][0]
 
 
+def running_game_executable() -> Path | None:
+    if os.name != "nt":
+        return None
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.QueryFullProcessImageNameW.argtypes = (wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD))
+    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    for pid, _name in running_game_processes(("DreadHunger-Win64-Shipping.exe",)):
+        handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            continue
+        try:
+            buffer = ctypes.create_unicode_buffer(32768)
+            size = wintypes.DWORD(len(buffer))
+            if kernel32.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(size)):
+                return Path(buffer.value)
+        finally:
+            kernel32.CloseHandle(handle)
+    return None
+
+
 def connector_request(address: str) -> dict:
     normalized = normalize_server_address(address)
     resolved = resolve_host(normalized)
@@ -560,31 +604,48 @@ def connector_request(address: str) -> dict:
 def send_client_bridge_command(command: dict, ack_seconds: float = CLIENT_BRIDGE_ACK_SECONDS) -> dict:
     payload = json.dumps(command, ensure_ascii=False, separators=(",", ":")).encode("utf-16-le")
     trace_quick_join("bridge-send op=%s" % command.get("op", "?"))
+    result = None
+    sent = False
     try:
         with socket.create_connection(("127.0.0.1", CLIENT_BRIDGE_PORT), timeout=CLIENT_BRIDGE_TIMEOUT_SECONDS) as client:
             client.sendall(payload)
+            sent = True
             client.shutdown(socket.SHUT_WR)
-            client.settimeout(ack_seconds)
-            try:
-                response = client.recv(4096)
-            except socket.timeout:
-                response = b""
+            deadline = time.monotonic() + ack_seconds
+            response = bytearray()
+            while time.monotonic() < deadline:
+                client.settimeout(max(0.01, deadline - time.monotonic()))
+                try:
+                    chunk = client.recv(4096)
+                except socket.timeout:
+                    break
+                if not chunk:
+                    break
+                response.extend(chunk)
+                if len(response) > 65536:
+                    break
+                try:
+                    result = json.loads(response.decode("utf-16-le").rstrip("\x00"))
+                    break
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    continue
     except OSError as exc:
+        if sent and command.get("op") == "Connect":
+            trace_quick_join("bridge-queued op=Connect; waiting-game-log")
+            return {}
         raise OSError("客户端内置连接服务尚未就绪（127.0.0.1:%d）" % CLIENT_BRIDGE_PORT) from exc
 
-    if response:
-        try:
-            result = json.loads(response.decode("utf-16-le").rstrip("\x00"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
+    if not isinstance(result, dict) or not result:
+        trace_quick_join("bridge-no-ack op=%s" % command.get("op", "?"))
+        if command.get("op") == "Connect":
+            trace_quick_join("bridge-queued op=Connect; waiting-game-log")
             return {}
-        if isinstance(result, dict) and result.get("success") is False:
-            trace_quick_join("bridge-rejected op=%s error=%s" % (command.get("op", "?"), result.get("error") or "unknown"))
-            raise OSError(str(result.get("error") or "客户端连接器拒绝了命令"))
-        if isinstance(result, dict):
-            trace_quick_join("bridge-accepted op=%s" % command.get("op", "?"))
-            return result
+        raise OSError("客户端连接器未返回有效回执，请确认游戏大厅已就绪")
+    if result.get("success") is False:
+        trace_quick_join("bridge-rejected op=%s error=%s" % (command.get("op", "?"), result.get("error") or "unknown"))
+        raise OSError(str(result.get("error") or "客户端连接器拒绝了命令"))
     trace_quick_join("bridge-accepted op=%s" % command.get("op", "?"))
-    return {}
+    return result
 
 
 def send_connector_command(address: str) -> str:
@@ -594,47 +655,83 @@ def send_connector_command(address: str) -> str:
 
 
 def send_client_announcement(text: str) -> None:
-    send_client_bridge_command({"op": "sendMessage", "title": "快速进服器", "msg": text})
+    executable = running_game_executable()
+    if executable is None:
+        raise OSError("客户端未运行，无法发送游戏原生文字")
+    win64 = client_win64_directory(executable)
+    trigger = win64 / "quick_join_announce.json"
+    receipt = win64 / "quick_join_announce_result.json"
+    command_id = "%d-%d" % (os.getpid(), time.time_ns())
+    command = {"id": command_id, "text": text, "expires_at": int(time.time() * 1000) + 3000}
+    temporary = trigger.with_suffix(".%s.tmp" % command_id)
+    temporary.write_text(json.dumps(command, ensure_ascii=False), encoding="utf-8")
+    os.replace(temporary, trigger)
+    trace_quick_join("native-notice-queued id=%s" % command_id)
+    deadline = time.monotonic() + CLIENT_BRIDGE_ACK_SECONDS
+    while time.monotonic() < deadline:
+        try:
+            result = json.loads(receipt.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            result = {}
+        if isinstance(result, dict) and result.get("id") == command_id:
+            if result.get("success") is not True:
+                raise OSError(str(result.get("error") or "游戏原生文字发送失败"))
+            trace_quick_join("native-notice-displayed id=%s" % command_id)
+            return
+        time.sleep(0.05)
+    raise OSError("游戏原生公告 Hook 未返回回执；首次安装后请重启游戏客户端一次")
 
 
 def read_client_fixed_roles() -> list[dict]:
-    result = send_client_bridge_command({"op": "GetFixedRoles"}, ack_seconds=2.0)
-    records = result.get("PlayerRoles")
-    if isinstance(records, dict):
-        records = records.get("Records")
-    if not isinstance(records, list):
-        raise OSError("客户端连接器没有返回大厅职业名单")
+    for attempt in range(1, 6):
+        result = send_client_bridge_command({"op": "GetFixedRoles"}, ack_seconds=1.0)
+        records = result.get("PlayerRoles")
+        if isinstance(records, dict):
+            records = records.get("Records")
 
-    roles = []
-    seen_users = set()
-    seen_roles = set()
-    for record in records:
-        if not isinstance(record, dict):
-            continue
-        user_id = str(record.get("UID") or record.get("UniqueID") or record.get("user_id") or "").strip()
-        if user_id.startswith("EOSPlus:"):
-            user_id = user_id[len("EOSPlus:") :]
-        raw_role = record.get("Job", record.get("role", 0))
-        try:
-            role = int(raw_role)
-        except (TypeError, ValueError):
-            role = CLIENT_ROLE_TYPES.get(str(raw_role).strip().casefold(), 0)
-        if not user_id or not 1 <= role <= 8:
-            continue
-        user_key = user_id.casefold()
-        if user_key in seen_users or role in seen_roles:
-            raise OSError("客户端大厅职业名单存在重复玩家或重复职业")
-        seen_users.add(user_key)
-        seen_roles.add(role)
-        roles.append({"user_id": user_id, "role": role})
+        roles = []
+        seen_users = set()
+        seen_roles = set()
+        if isinstance(records, list):
+            for record in records:
+                if not isinstance(record, dict):
+                    continue
+                user_id = str(record.get("UID") or record.get("UniqueID") or record.get("user_id") or "").strip()
+                if user_id.startswith("EOSPlus:"):
+                    user_id = user_id[len("EOSPlus:") :]
+                raw_role = record.get("Job", record.get("role", 0))
+                try:
+                    role = int(raw_role)
+                except (TypeError, ValueError):
+                    role = CLIENT_ROLE_TYPES.get(str(raw_role).strip().casefold(), 0)
+                if not user_id or not 1 <= role <= 8:
+                    continue
+                user_key = user_id.casefold()
+                if user_key in seen_users or role in seen_roles:
+                    raise OSError("客户端大厅职业名单存在重复玩家或重复职业")
+                seen_users.add(user_key)
+                seen_roles.add(role)
+                roles.append({"user_id": user_id, "role": role})
 
-    if not roles:
-        raise OSError("客户端大厅还没有可同步的已选职业")
-    return roles
+        if roles:
+            return roles
+        trace_quick_join("fixed-roles-read empty attempt=%d" % attempt)
+        if attempt < 5:
+            time.sleep(0.2)
+    raise OSError("客户端连接器连续 5 次没有返回大厅职业名单，请留在大厅职业选择界面后重试")
 
 
 def show_game_notice(text: str, duration_ms: int, danger: bool = False) -> None:
     """Show a no-focus overlay above the game without using its message queue."""
+    foreground = None
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        user32.GetForegroundWindow.restype = wintypes.HWND
+        user32.SetForegroundWindow.argtypes = (wintypes.HWND,)
+        foreground = user32.GetForegroundWindow()
     root = tk.Tk()
     root.withdraw()
     root.overrideredirect(True)
@@ -642,6 +739,7 @@ def show_game_notice(text: str, duration_ms: int, danger: bool = False) -> None:
     root.attributes("-topmost", True)
     try:
         root.attributes("-toolwindow", True)
+        root.attributes("-disabled", True)
     except tk.TclError:
         pass
 
@@ -667,8 +765,19 @@ def show_game_notice(text: str, duration_ms: int, danger: bool = False) -> None:
         justify="left",
         wraplength=width - 44,
     ).pack(fill="both", expand=True, padx=22, pady=(0, 17))
+    root.update_idletasks()
+    root.geometry("%dx%d+%d+42" % (width, root.winfo_reqheight(), (screen_width - width) // 2))
+    if os.name == "nt":
+        user32.GetAncestor.argtypes = (wintypes.HWND, wintypes.UINT)
+        user32.GetAncestor.restype = wintypes.HWND
+        user32.GetWindowLongW.argtypes = (wintypes.HWND, ctypes.c_int)
+        user32.SetWindowLongW.argtypes = (wintypes.HWND, ctypes.c_int, ctypes.c_long)
+        hwnd = user32.GetAncestor(root.winfo_id(), 2)
+        user32.SetWindowLongW(hwnd, -20, user32.GetWindowLongW(hwnd, -20) | 0x08000000)  # WS_EX_NOACTIVATE
     root.deiconify()
-    root.geometry("%dx112+%d+42" % (width, (screen_width - width) // 2))
+    root.update()
+    if foreground:
+        user32.SetForegroundWindow(foreground)
     root.after(max(1000, duration_ms), root.destroy)
     root.mainloop()
 
@@ -687,9 +796,12 @@ def launch_game_notice(text: str, duration_ms: int, danger: bool = False) -> Non
 class QuickJoinApp:
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("Dread Hunger · 快速进服器 v%s" % QUICK_JOIN_VERSION)
-        center_window(root, 960, 720)
-        root.minsize(880, 660)
+        self.root.title("%s · %s" % (QUICK_JOIN_NAME, QUICK_JOIN_VERSION))
+        self.ui_scale = max(1.0, root.winfo_fpixels("1i") / 96)
+        window_width = min(round(1100 * self.ui_scale), root.winfo_screenwidth() - 80)
+        window_height = min(round(760 * self.ui_scale), root.winfo_screenheight() - 100)
+        center_window(root, window_width, window_height)
+        root.minsize(min(round(980 * self.ui_scale), window_width), min(700, window_height))
         apply_dark_theme(root)
         self.settings = load_settings(
             "quick_join",
@@ -709,7 +821,7 @@ class QuickJoinApp:
         self.address_var = tk.StringVar(value=str(self.settings.get("address") or DEFAULT_ADDRESS))
         self.exe_var = tk.StringVar(value=str(self.settings.get("game_executable") or DEFAULT_CLIENT))
         self.announcement_enabled_var = tk.BooleanVar(value=bool(self.settings.get("announcement_enabled", False)))
-        self.announcement_status_var = tk.StringVar(value="使用客户端内置游戏线程消息通道")
+        self.announcement_status_var = tk.StringVar(value="公告将在当前游戏大厅中显示")
         self.blacklist_check_enabled_var = tk.BooleanVar(value=bool(self.settings.get("blacklist_check_enabled", True)))
         self.fixed_roles_enabled_var = tk.BooleanVar(value=bool(self.settings.get("fixed_roles_enabled", True)))
         self.gm_api_port_var = tk.StringVar(value=str(self.settings.get("gm_api_port") or DEFAULT_GM_PORT))
@@ -735,149 +847,207 @@ class QuickJoinApp:
         self._retry_log_offset = 0
         self._lobby_ready_since = None
         self._header_icon = None
+        self._window_icon = None
         self.runner = AsyncRunner(root)
         self._build()
         self._refresh_process_state()
 
     def _build(self) -> None:
         try:
-            self.root.iconbitmap(str(resource_path("assets/quick_join_icon.ico")))
+            self.root.iconbitmap(str(resource_path("assets/quick_join_taskbar.ico")))
+            self._window_icon = tk.PhotoImage(file=str(resource_path("assets/quick_join_taskbar.png")))
+            self.root.iconphoto(True, self._window_icon)
         except (OSError, tk.TclError):
             pass
 
-        hero = tk.Frame(self.root, bg="#0A1D35", height=100)
-        hero.pack(fill="x")
-        hero.pack_propagate(False)
+        self.root.configure(bg=BG)
+        style = ttk.Style(self.root)
+        style.configure("TButton", background=PANEL, foreground=TEXT, bordercolor=BORDER, padding=(16, 10))
+        style.map("TButton", background=[("active", "#EAF2F5"), ("pressed", "#DCEBF0")])
+        style.configure("Accent.TButton", background=ACCENT, foreground="white", bordercolor=ACCENT, font=("Microsoft YaHei UI", 10, "bold"))
+        style.map("Accent.TButton", background=[("disabled", "#A7C4CD"), ("pressed", "#055C70"), ("active", "#096D82")])
+        style.configure("TEntry", fieldbackground=PANEL, foreground=TEXT, bordercolor=BORDER, padding=10)
+        style.map("TEntry", bordercolor=[("focus", ACCENT)])
+        style.configure("Toggle.TCheckbutton", background=PANEL, foreground=TEXT, padding=(0, 4), font=("Microsoft YaHei UI", 10))
+        style.map("Toggle.TCheckbutton", background=[("active", PANEL)], indicatorbackground=[("selected", ACCENT)])
+        style.configure("Treeview", rowheight=42, borderwidth=0, background=PANEL, fieldbackground=PANEL, foreground=TEXT)
+        style.configure("Treeview.Heading", background="#EEF4F7", foreground=MUTED, padding=12)
+        style.map("Treeview", background=[("selected", "#DDF1F5")], foreground=[("selected", "#075C70")])
+
+        sidebar = tk.Frame(self.root, bg="#102B3C", width=round(184 * self.ui_scale))
+        sidebar.pack(side="left", fill="y")
+        sidebar.pack_propagate(False)
+        brand = tk.Frame(sidebar, bg="#102B3C")
+        brand.pack(fill="x", padx=22, pady=(28, 26))
         try:
-            icon = tk.PhotoImage(file=str(resource_path("assets/quick_join_icon.png"))).subsample(18, 18)
-            self._header_icon = icon
-            tk.Label(hero, image=icon, bg="#0A1D35").pack(side="left", padx=(26, 14), pady=14)
+            self._header_icon = tk.PhotoImage(file=str(resource_path("assets/quick_join_icon_v2.png"))).subsample(8, 8)
+            tk.Label(brand, image=self._header_icon, bg="#102B3C").pack(anchor="w", pady=(0, 14))
         except (OSError, tk.TclError):
             pass
-        hero_copy = tk.Frame(hero, bg="#0A1D35")
-        hero_copy.pack(side="left", fill="y", pady=14)
-        tk.Label(hero_copy, text="DREAD HUNGER  ·  v%s" % QUICK_JOIN_VERSION, bg="#0A1D35", fg="#77D5FF", font=("Segoe UI", 9, "bold"), anchor="w").pack(anchor="w")
-        tk.Label(hero_copy, text="快速进服器", bg="#0A1D35", fg="white", font=("Microsoft YaHei UI", 22, "bold"), anchor="w").pack(anchor="w")
-        tk.Label(hero_copy, text="IP 直连 · 身份黑名单 · 自动重试 · 本地公告", bg="#0A1D35", fg="#AFC7DF", font=("Microsoft YaHei UI", 9), anchor="w").pack(anchor="w", pady=(2, 0))
+        tk.Label(brand, text="恐惧饥饿", bg="#102B3C", fg="#F1F8FC", font=("Microsoft YaHei UI", 18, "bold")).pack(anchor="w")
+        tk.Label(brand, text="进服器", bg="#102B3C", fg="#80D4E2", font=("Microsoft YaHei UI", 12)).pack(anchor="w", pady=(4, 0))
+        tk.Frame(sidebar, bg="#294553", height=1).pack(fill="x", padx=22, pady=(0, 20))
+        self.nav_buttons = []
+        for index, title in enumerate(("连接服务器", "本地公告", "最近服务器", "客户端设置")):
+            button = tk.Button(sidebar, text="  " + title, command=lambda page=index: self._show_page(page),
+                               anchor="w", bg="#102B3C", fg="#AFC6D1", activebackground="#1D4356",
+                               activeforeground="white", relief="flat", borderwidth=0, cursor="hand2",
+                               font=("Microsoft YaHei UI", 10), padx=12, pady=12)
+            button.pack(fill="x", padx=12, pady=3)
+            self.nav_buttons.append(button)
+        sidebar_footer = tk.Frame(sidebar, bg="#102B3C")
+        sidebar_footer.pack(side="bottom", fill="x", padx=22, pady=24)
+        tk.Label(sidebar_footer, text="DREAD HUNGER", bg="#102B3C", fg="#94ADBB", font=("Segoe UI", 9, "bold")).pack(anchor="w")
+        tk.Label(sidebar_footer, text="版本 " + QUICK_JOIN_VERSION, bg="#102B3C", fg="#8FD7E3", font=("Microsoft YaHei UI", 9)).pack(anchor="w", pady=(6, 0))
 
         content = tk.Frame(self.root, bg=BG)
-        content.pack(fill="both", expand=True, padx=22, pady=14)
-        content.grid_columnconfigure(0, weight=6, uniform="columns")
-        content.grid_columnconfigure(1, weight=5, uniform="columns")
-        content.grid_rowconfigure(0, weight=1)
+        content.pack(side="left", fill="both", expand=True, padx=28, pady=24)
+        self.page_title_var = tk.StringVar()
+        self.page_subtitle_var = tk.StringVar()
+        tk.Label(content, textvariable=self.page_title_var, bg=BG, fg=TEXT, font=("Microsoft YaHei UI", 22, "bold"), anchor="w").pack(fill="x")
+        tk.Label(content, textvariable=self.page_subtitle_var, bg=BG, fg=MUTED, font=("Microsoft YaHei UI", 9), anchor="w").pack(fill="x", pady=(6, 20))
 
-        left = tk.Frame(content, bg=BG)
-        left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
-        right = tk.Frame(content, bg=BG)
-        right.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+        footer = tk.Frame(content, bg=BG)
+        footer.pack(side="bottom", fill="x", pady=(16, 0))
+        tk.Frame(footer, bg=BORDER, height=1).pack(fill="x", pady=(0, 12))
+        tk.Label(footer, textvariable=self.process_var, bg=BG, fg=ACCENT, font=("Microsoft YaHei UI", 9, "bold"), anchor="w").pack(fill="x")
+        self.status_label = tk.Label(footer, textvariable=self.status_var, bg=BG, fg=MUTED, font=("Microsoft YaHei UI", 9), anchor="w", justify="left", wraplength=700)
+        self.status_label.pack(fill="x", pady=(5, 0))
+        self.status_label.bind("<Configure>", lambda event: self.status_label.configure(wraplength=max(1, event.width)))
 
-        server_card = self._card(left)
-        server_card.pack(fill="x")
-        self._card_title(server_card, "服务器直连", "输入 IP:端口，或从历史记录中选择")
-        self.address_entry = ttk.Combobox(
-            server_card,
-            textvariable=self.address_var,
-            values=self.history,
-            font=("Cascadia Mono", 12),
-        )
-        self.address_entry.pack(fill="x", padx=18, pady=(0, 12), ipady=3)
+        page_area = tk.Frame(content, bg=BG)
+        page_area.pack(fill="both", expand=True)
+        page_area.grid_columnconfigure(0, weight=1)
+        page_area.grid_rowconfigure(0, weight=1)
+        self.pages = [tk.Frame(page_area, bg=BG) for _ in range(4)]
+        for page in self.pages:
+            page.grid(row=0, column=0, sticky="nsew")
+        connect_page, announcement_page, history_page, client_page = self.pages
+
+        connect_canvas = tk.Canvas(connect_page, bg=BG, highlightthickness=0)
+        connect_scroll = ttk.Scrollbar(connect_page, orient="vertical", command=connect_canvas.yview)
+        connect_scroll.pack(side="right", fill="y")
+        connect_canvas.pack(side="left", fill="both", expand=True)
+        connect_canvas.configure(yscrollcommand=connect_scroll.set)
+        self.connect_canvas = connect_canvas
+        connect_body = tk.Frame(connect_canvas, bg=BG)
+        self.connect_body = connect_body
+        connect_window = connect_canvas.create_window((0, 0), window=connect_body, anchor="nw")
+        connect_body.bind("<Configure>", lambda _event: connect_canvas.configure(scrollregion=connect_canvas.bbox("all")))
+        connect_canvas.bind("<Configure>", lambda event: connect_canvas.itemconfigure(connect_window, width=event.width))
+        self.root.bind("<MouseWheel>", lambda event: connect_canvas.yview_scroll(-int(event.delta / 120), "units") if connect_page.winfo_ismapped() else None, add="+")
+
+        server_card = self._card(connect_body)
+        server_card.pack(fill="x", pady=(0, 16))
+        self._card_title(server_card, "目标服务器", "填写服务器 IP 或域名，并带上游戏端口")
+        address_row = tk.Frame(server_card, bg=PANEL)
+        address_row.pack(fill="x", padx=22, pady=(0, 8))
+        self.address_entry = ttk.Entry(address_row, textvariable=self.address_var, font=("Cascadia Mono", 17))
+        self.address_entry.pack(side="left", fill="x", expand=True, ipady=4)
         self.address_entry.bind("<Return>", lambda _event: self.join_running_game())
-
-        status_box = tk.Frame(server_card, bg="#F3F7FC", highlightbackground="#D7E2EE", highlightthickness=1)
-        status_box.pack(fill="x", padx=18, pady=(0, 12))
-        tk.Label(status_box, textvariable=self.process_var, bg="#F3F7FC", fg=TEXT, font=("Microsoft YaHei UI", 10, "bold"), anchor="w").pack(fill="x", padx=12, pady=(10, 2))
-        tk.Label(status_box, textvariable=self.status_var, bg="#F3F7FC", fg=MUTED, font=("Microsoft YaHei UI", 9), anchor="w", justify="left", wraplength=460).pack(fill="x", padx=12, pady=(0, 10))
-
-        blacklist_box = ttk.Frame(server_card, style="Panel.TFrame")
-        blacklist_box.pack(fill="x", padx=18, pady=(0, 12))
-        ttk.Checkbutton(
-            blacklist_box,
-            text="进服前检查云端黑名单",
-            variable=self.blacklist_check_enabled_var,
-            command=self._save_settings,
-        ).grid(row=0, column=0, columnspan=4, sticky="w")
-        ttk.Label(blacklist_box, text="GM 端口", style="CardMuted.TLabel").grid(row=1, column=0, sticky="w", pady=(7, 0))
-        ttk.Entry(blacklist_box, textvariable=self.gm_api_port_var, width=8).grid(row=1, column=1, sticky="w", padx=(6, 12), pady=(7, 0))
-        ttk.Label(blacklist_box, text="查询令牌", style="CardMuted.TLabel").grid(row=1, column=2, sticky="w", pady=(7, 0))
-        ttk.Entry(blacklist_box, textvariable=self.blacklist_check_token_var, show="●", width=18).grid(row=1, column=3, sticky="ew", padx=(6, 0), pady=(7, 0))
-        blacklist_box.columnconfigure(3, weight=1)
-        tk.Label(blacklist_box, textvariable=self.blacklist_status_var, bg=PANEL, fg=MUTED, font=("Microsoft YaHei UI", 8), anchor="w", justify="left", wraplength=460).grid(row=2, column=0, columnspan=4, sticky="ew", pady=(7, 0))
-        ttk.Checkbutton(
-            blacklist_box,
-            text="同步大厅职业并由服务器固定分配（使用同一令牌）",
-            variable=self.fixed_roles_enabled_var,
-            command=self._save_settings,
-        ).grid(row=3, column=0, columnspan=4, sticky="w", pady=(7, 0))
-
-        join_row = ttk.Frame(server_card, style="Panel.TFrame")
-        join_row.pack(fill="x", padx=18, pady=(0, 18))
-        self.join_button = ttk.Button(
-            join_row,
-            text="▶  进入服务器",
-            style="Accent.TButton",
-            command=self.join_running_game,
-        )
+        self.address_history_button = ttk.Button(address_row, text="最近 ▾", command=self.show_address_history_menu)
+        self.address_history_button.pack(side="left", padx=(10, 0), ipady=5)
+        tk.Label(server_card, text="例如 127.0.0.1:9100  ·  地址中的端口是游戏端口", bg=PANEL, fg=MUTED, font=("Microsoft YaHei UI", 8), anchor="w").pack(fill="x", padx=22, pady=(0, 18))
+        join_row = tk.Frame(server_card, bg=PANEL)
+        join_row.pack(fill="x", padx=22, pady=(0, 22))
+        self.join_button = ttk.Button(join_row, text="进入服务器  →", style="Accent.TButton", command=self.join_running_game)
         self.join_button.pack(side="left", fill="x", expand=True, ipady=5)
+        self.launch_button = ttk.Button(join_row, text="启动客户端并进入", command=self.launch_with_address)
+        self.launch_button.pack(side="left", padx=(10, 0), ipady=5)
         self.stop_button = ttk.Button(join_row, text="停止重试", command=self.stop_auto_join, state="disabled")
-        self.stop_button.pack(side="left", padx=(8, 0), ipady=5)
+        self.stop_button.pack(side="left", padx=(10, 0), ipady=5)
 
-        history_card = self._card(left)
-        history_card.pack(fill="both", expand=True, pady=(14, 0))
-        self._card_title(history_card, "服务器历史", "最近使用的地址保存在本机，最多 20 条")
-        tree_frame = ttk.Frame(history_card, style="Panel.TFrame")
-        tree_frame.pack(fill="both", expand=True, padx=18)
+        security_card = self._card(connect_body)
+        security_card.pack(fill="x")
+        self._card_title(security_card, "连接前检查", "查询令牌来自 GM 控制台的黑名单页面")
+        toggles = tk.Frame(security_card, bg=PANEL)
+        toggles.pack(fill="x", padx=22, pady=(0, 12))
+        self._large_toggle(toggles, "检查云端黑名单", self.blacklist_check_enabled_var, self._save_settings).pack(side="left")
+        self._large_toggle(toggles, "同步大厅职业", self.fixed_roles_enabled_var, self._save_settings).pack(side="left", padx=(24, 0))
+        fields = tk.Frame(security_card, bg=PANEL)
+        fields.pack(fill="x", padx=22)
+        fields.columnconfigure(1, weight=1)
+        tk.Label(fields, text="GM 端口", bg=PANEL, fg=MUTED, font=("Microsoft YaHei UI", 9), anchor="w").grid(row=0, column=0, sticky="w", pady=(0, 6))
+        tk.Label(fields, text="只读查询令牌", bg=PANEL, fg=MUTED, font=("Microsoft YaHei UI", 9), anchor="w").grid(row=0, column=1, sticky="w", padx=(14, 0), pady=(0, 6))
+        ttk.Entry(fields, textvariable=self.gm_api_port_var, width=10).grid(row=1, column=0, sticky="ew")
+        ttk.Entry(fields, textvariable=self.blacklist_check_token_var, show="●").grid(row=1, column=1, sticky="ew", padx=(14, 0))
+        security_status = tk.Label(security_card, textvariable=self.blacklist_status_var, bg=PANEL, fg=MUTED, font=("Microsoft YaHei UI", 9), anchor="w", justify="left", wraplength=660)
+        security_status.pack(fill="x", padx=22, pady=(14, 18))
+        security_status.bind("<Configure>", lambda event: security_status.configure(wraplength=max(1, event.width)))
+
+        announcement_card = self._card(announcement_page)
+        announcement_card.pack(fill="both", expand=True)
+        self._card_title(announcement_card, "公告内容", "最多 500 字；自动公告显示后，等待 3 秒再连接")
+        self._large_toggle(announcement_card, "进服前自动发布公告", self.announcement_enabled_var, self.save_announcement_settings).pack(anchor="w", padx=22, pady=(0, 12))
+        editor = tk.Frame(announcement_card, bg=PANEL)
+        editor.pack(fill="both", expand=True, padx=22)
+        self.announcement_text = tk.Text(editor, height=8, wrap="word", font=("Microsoft YaHei UI", 11), relief="flat", highlightthickness=1,
+                                         highlightbackground=BORDER, highlightcolor=ACCENT, fg=TEXT, bg="#F7FAFC", insertbackground=TEXT, padx=14, pady=12)
+        self.announcement_text.pack(side="left", fill="both", expand=True)
+        editor_scroll = ttk.Scrollbar(editor, orient="vertical", command=self.announcement_text.yview)
+        editor_scroll.pack(side="right", fill="y")
+        self.announcement_text.configure(yscrollcommand=editor_scroll.set)
+        self.announcement_text.insert("1.0", str(self.settings.get("announcement_text") or DEFAULT_ANNOUNCEMENT))
+        announcement_status = tk.Label(announcement_card, textvariable=self.announcement_status_var, bg=PANEL, fg=MUTED, font=("Microsoft YaHei UI", 9), anchor="w", justify="left", wraplength=660)
+        announcement_status.pack(fill="x", padx=22, pady=(12, 0))
+        announcement_status.bind("<Configure>", lambda event: announcement_status.configure(wraplength=max(1, event.width)))
+        announcement_buttons = tk.Frame(announcement_card, bg=PANEL)
+        announcement_buttons.pack(fill="x", padx=22, pady=20)
+        ttk.Button(announcement_buttons, text="保存公告", command=self.save_announcement_settings).pack(side="left")
+        ttk.Button(announcement_buttons, text="立即发布公告", style="Accent.TButton", command=self.publish_announcement).pack(side="right")
+
+        history_card = self._card(history_page)
+        history_card.pack(fill="both", expand=True)
+        self._card_title(history_card, "最近连接", "保留最近 20 个地址；双击地址即可填入连接页")
+        tree_frame = tk.Frame(history_card, bg=PANEL)
+        tree_frame.pack(fill="both", expand=True, padx=22)
         self.history_tree = ttk.Treeview(tree_frame, columns=("address",), show="headings", height=8, selectmode="browse")
-        self.history_tree.heading("address", text="IP / 域名与端口")
-        self.history_tree.column("address", anchor="w", width=330)
+        self.history_tree.heading("address", text="服务器地址")
+        self.history_tree.column("address", anchor="w", width=480)
         history_scroll = ttk.Scrollbar(tree_frame, orient="vertical", command=self.history_tree.yview)
         self.history_tree.configure(yscrollcommand=history_scroll.set)
         self.history_tree.pack(side="left", fill="both", expand=True)
         history_scroll.pack(side="right", fill="y")
         self.history_tree.bind("<Double-1>", lambda _event: self.use_selected_history())
-        history_buttons = ttk.Frame(history_card, style="Panel.TFrame")
-        history_buttons.pack(fill="x", padx=18, pady=12)
-        ttk.Button(history_buttons, text="使用所选", command=self.use_selected_history).pack(side="left")
-        ttk.Button(history_buttons, text="删除", command=self.delete_selected_history).pack(side="left", padx=8)
+        history_buttons = tk.Frame(history_card, bg=PANEL)
+        history_buttons.pack(fill="x", padx=22, pady=20)
+        ttk.Button(history_buttons, text="使用所选地址", style="Accent.TButton", command=self.use_selected_history).pack(side="left")
+        ttk.Button(history_buttons, text="删除所选", command=self.delete_selected_history).pack(side="left", padx=10)
         ttk.Button(history_buttons, text="清空历史", command=self.clear_history).pack(side="right")
         self._refresh_history_view()
 
-        announcement_card = self._card(right)
-        announcement_card.pack(fill="both", expand=True)
-        self._card_title(announcement_card, "本地公告", "可立即测试；自动公告会先显示，3 秒后再连接服务器")
-        ttk.Checkbutton(
-            announcement_card,
-            text="点击进服时先自动发布公告",
-            variable=self.announcement_enabled_var,
-            command=self.save_announcement_settings,
-        ).pack(anchor="w", padx=18, pady=(0, 8))
-        self.announcement_text = tk.Text(
-            announcement_card,
-            height=8,
-            wrap="word",
-            font=("Microsoft YaHei UI", 10),
-            relief="solid",
-            borderwidth=1,
-            highlightthickness=0,
-            fg=TEXT,
-            bg="#FAFCFF",
-            insertbackground=TEXT,
-        )
-        self.announcement_text.pack(fill="both", expand=True, padx=18)
-        self.announcement_text.insert("1.0", str(self.settings.get("announcement_text") or DEFAULT_ANNOUNCEMENT))
-        tk.Label(announcement_card, textvariable=self.announcement_status_var, bg=PANEL, fg=MUTED, font=("Microsoft YaHei UI", 8), anchor="w", justify="left", wraplength=370).pack(fill="x", padx=18, pady=(8, 4))
-        announcement_buttons = ttk.Frame(announcement_card, style="Panel.TFrame")
-        announcement_buttons.pack(fill="x", padx=18, pady=(4, 18))
-        ttk.Button(announcement_buttons, text="保存设置", command=self.save_announcement_settings).pack(side="left", fill="x", expand=True, ipady=3)
-        ttk.Button(announcement_buttons, text="立即发布公告", style="Accent.TButton", command=self.publish_announcement).pack(side="left", fill="x", expand=True, padx=(8, 0), ipady=3)
+        client_card = self._card(client_page)
+        client_card.pack(fill="x")
+        self._card_title(client_card, "游戏安装位置", "支持 DreadHunger.exe 或 DreadHunger-Win64-Shipping.exe")
+        ttk.Entry(client_card, textvariable=self.exe_var).pack(fill="x", padx=22, pady=(0, 14))
+        client_buttons = tk.Frame(client_card, bg=PANEL)
+        client_buttons.pack(fill="x", padx=22, pady=(0, 22))
+        ttk.Button(client_buttons, text="选择客户端", command=self.choose_executable).pack(side="left")
+        ttk.Button(client_buttons, text="启动客户端并进入", style="Accent.TButton", command=self.launch_with_address).pack(side="right")
+        tips_card = self._card(client_page)
+        tips_card.pack(fill="x", pady=(16, 0))
+        self._card_title(tips_card, "使用提示", "启动客户端后，在船上大厅中连接服务器")
+        tk.Label(tips_card, text="首次安装或更新连接服务后，需要重启游戏一次。\n如果游戏已经在大厅运行，直接点击“进入服务器”。",
+                 bg=PANEL, fg=MUTED, font=("Microsoft YaHei UI", 10), anchor="w", justify="left").pack(fill="x", padx=22, pady=(0, 22))
+        self._show_page(0)
 
-        client_card = self._card(right)
-        client_card.pack(fill="x", pady=(14, 0))
-        self._card_title(client_card, "客户端", "选择启动程序；首次启用公告后需重启客户端一次")
-        path_row = ttk.Frame(client_card, style="Panel.TFrame")
-        path_row.pack(fill="x", padx=18, pady=(0, 10))
-        ttk.Entry(path_row, textvariable=self.exe_var).pack(side="left", fill="x", expand=True)
-        ttk.Button(path_row, text="选择客户端", command=self.choose_executable).pack(side="left", padx=(8, 0))
-        ttk.Button(client_card, text="启动客户端并自动进入", command=self.launch_with_address).pack(fill="x", padx=18, pady=(0, 18), ipady=3)
+    def _show_page(self, index: int) -> None:
+        titles = ("连接服务器", "本地公告", "最近服务器", "客户端设置")
+        subtitles = ("在游戏大厅中，连接你要加入的服务器。", "将你的公告显示在游戏大厅中。", "常用的服务器，下次更快找到。", "选择游戏程序，准备进入大厅。")
+        for page in self.pages:
+            page.grid_remove()
+        self.pages[index].grid()
+        self.page_title_var.set(titles[index])
+        self.page_subtitle_var.set(subtitles[index])
+        for position, button in enumerate(self.nav_buttons):
+            button.configure(bg="#1E4A5D" if position == index else "#102B3C", fg="#A3EBF4" if position == index else "#AFC6D1")
+        self.nav_buttons[index].focus_set()
+
+    @staticmethod
+    def _large_toggle(parent: tk.Widget, text: str, variable: tk.BooleanVar, command, background: str = PANEL) -> tk.Frame:
+        holder = tk.Frame(parent, bg=background)
+        ttk.Checkbutton(holder, text=text, variable=variable, command=command, style="Toggle.TCheckbutton", cursor="hand2").pack(anchor="w")
+        return holder
 
     @staticmethod
     def _card(parent: tk.Widget) -> tk.Frame:
@@ -885,8 +1055,9 @@ class QuickJoinApp:
 
     @staticmethod
     def _card_title(parent: tk.Widget, title: str, subtitle: str) -> None:
-        tk.Label(parent, text=title, bg=PANEL, fg=TEXT, font=("Microsoft YaHei UI", 12, "bold"), anchor="w").pack(fill="x", padx=18, pady=(16, 2))
-        tk.Label(parent, text=subtitle, bg=PANEL, fg=MUTED, font=("Microsoft YaHei UI", 8), anchor="w", justify="left", wraplength=430).pack(fill="x", padx=18, pady=(0, 12))
+        tk.Label(parent, text=title, bg=PANEL, fg=TEXT, font=("Microsoft YaHei UI", 12, "bold"), anchor="w").pack(fill="x", padx=22, pady=(20, 4))
+        tk.Label(parent, text=subtitle, bg=PANEL, fg=MUTED, font=("Microsoft YaHei UI", 9), anchor="w", justify="left", wraplength=650).pack(fill="x", padx=22, pady=(0, 16))
+
 
     def _announcement_value(self) -> str:
         return self.announcement_text.get("1.0", "end-1c").strip()
@@ -914,8 +1085,22 @@ class QuickJoinApp:
             self.history_tree.delete(item)
         for address in self.history:
             self.history_tree.insert("", "end", values=(address,))
-        if hasattr(self, "address_entry"):
-            self.address_entry.configure(values=self.history)
+        if hasattr(self, "address_history_button"):
+            self.address_history_button.configure(state="normal" if self.history else "disabled")
+
+    def show_address_history_menu(self) -> None:
+        if not self.history:
+            return
+        menu = tk.Menu(self.root, tearoff=False, font=("Cascadia Mono", 10))
+        for address in self.history:
+            menu.add_command(label=address, command=lambda value=address: self.address_var.set(value))
+        try:
+            menu.tk_popup(
+                self.address_history_button.winfo_rootx(),
+                self.address_history_button.winfo_rooty() + self.address_history_button.winfo_height(),
+            )
+        finally:
+            menu.grab_release()
 
     def _remember_address(self, address: str) -> None:
         self.history = remember_history(self.history, address)
@@ -929,6 +1114,7 @@ class QuickJoinApp:
         values = self.history_tree.item(selection[0], "values")
         if values:
             self.address_var.set(values[0])
+            self._show_page(0)
             self.address_entry.focus_set()
 
     def delete_selected_history(self) -> None:
@@ -967,6 +1153,14 @@ class QuickJoinApp:
         changed = not target.is_file() or target.read_bytes() != source.read_bytes()
         if changed:
             shutil.copyfile(str(source), str(target))
+        notice_source = resource_path(CLIENT_NOTICE_HOOK_FILENAME)
+        if not notice_source.is_file():
+            return False, changed, "程序包中缺少游戏原生公告 Hook"
+        notice_target = target.with_name(CLIENT_NOTICE_HOOK_FILENAME)
+        notice_changed = not notice_target.is_file() or notice_target.read_bytes() != notice_source.read_bytes()
+        if notice_changed:
+            shutil.copyfile(str(notice_source), str(notice_target))
+        changed = changed or notice_changed
         return True, changed, "客户端内置连接服务已就绪"
 
     def save_announcement_settings(self) -> None:
@@ -983,17 +1177,22 @@ class QuickJoinApp:
             return
         self.announcement_status_var.set("点击进服时会先显示公告，3 秒后开始连接")
 
-    def _send_current_announcement(self, require_enabled: bool, text=None) -> bool:
+    def _send_current_announcement(self, require_enabled: bool, text=None, duration_ms: int = LOBBY_NOTICE_RESULT_MS, danger: bool = False) -> bool:
         if require_enabled and not self.announcement_enabled_var.get():
             return False
         message = str(text).strip() if text is not None else self._announcement_value()
         if not message:
             return False
-        if len(message) > 500:
-            raise ValueError("公告内容最多 500 个字符。")
-        # Manual and automatic announcements share this message-send path.
-        send_client_announcement(message)
-        self.announcement_status_var.set("公告已发布到本机左侧狼人通道")
+        limit = 500 if text is None else 1000
+        if len(message) > limit:
+            raise ValueError("公告内容最多 %d 个字符。" % limit)
+        try:
+            send_client_announcement(message)
+            self.announcement_status_var.set("公告已显示在游戏左侧原生文字通道")
+        except OSError as exc:
+            trace_quick_join("native-notice-failed reason=%s" % exc)
+            launch_game_notice(message, duration_ms, danger)
+            self.announcement_status_var.set("原生文字未就绪，已显示本机悬浮提示：%s" % exc)
         return True
 
     def _clear_game_notice(self) -> None:
@@ -1002,12 +1201,12 @@ class QuickJoinApp:
         return
 
     def _show_lobby_notice(self, text: str, duration_ms: int = 0, danger: bool = False) -> bool:
-        clean = compact_game_text(text, 58)
+        clean = str(text).strip()
         if not clean:
             return False
         trace_quick_join("notice-send text=%s" % clean)
         try:
-            self._send_current_announcement(require_enabled=False, text=clean)
+            self._send_current_announcement(require_enabled=False, text=clean, duration_ms=duration_ms, danger=danger)
         except (OSError, ValueError):
             trace_quick_join("notice-failed")
             return False
@@ -1031,6 +1230,7 @@ class QuickJoinApp:
         if not self._pre_join_notice():
             return False
         self.root.iconify()
+        focus_running_game()
         self.status_var.set("正在切换到游戏并显示进服提示……")
         return True
 
@@ -1042,10 +1242,8 @@ class QuickJoinApp:
             if not notice:
                 published = False
             else:
-                send_client_announcement(notice)
-                published = True
-                self.announcement_status_var.set("进服提示已发布到本机左侧狼人通道")
-        except OSError as exc:
+                published = self._send_current_announcement(require_enabled=False, text=notice)
+        except (OSError, ValueError) as exc:
             self.announcement_status_var.set("自动公告发布失败：%s" % exc)
             published = False
         if published:
@@ -1060,31 +1258,37 @@ class QuickJoinApp:
         self.root.after(delay, lambda: self._send_join_attempt(address, generation, wait_for_client))
 
     def _query_cloud_blacklist(self, address: str) -> dict:
-        token = self.blacklist_check_token_var.get().strip()
-        if not token:
-            raise ValueError("尚未填写黑名单只读查询令牌")
+        token = normalize_query_token(self.blacklist_check_token_var.get())
         try:
             port = int(self.gm_api_port_var.get().strip())
         except ValueError:
             raise ValueError("GM 端口必须是数字")
         api = RemoteApi(address_host(address), port, token=token, timeout=6.0)
-        return api.request(
-            "/api/blacklist/preflight",
-            "POST",
-            {"user_id": read_local_user_id()},
-        )
+        try:
+            return api.request(
+                "/api/blacklist/preflight",
+                "POST",
+                {"user_id": read_local_user_id()},
+            )
+        except ApiError as exc:
+            if exc.status == 401:
+                raise ValueError("查询令牌被服务器拒绝；请从当前服务器的 GM 黑名单页重新复制只读查询令牌") from exc
+            raise
 
     def _upload_fixed_roles(self, address: str) -> dict:
-        token = self.blacklist_check_token_var.get().strip()
-        if not token:
-            raise ValueError("尚未填写大厅同步令牌")
+        token = normalize_query_token(self.blacklist_check_token_var.get())
         try:
             port = int(self.gm_api_port_var.get().strip())
         except ValueError:
             raise ValueError("GM 端口必须是数字")
         roles = read_client_fixed_roles()
         api = RemoteApi(address_host(address), port, token=token, timeout=6.0)
-        return api.request("/api/fixed-roles", "POST", {"roles": roles})
+        try:
+            return api.request("/api/fixed-roles", "POST", {"roles": roles})
+        except ApiError as exc:
+            if exc.status == 401:
+                raise ValueError("远端 GM 控制台尚未更新，或大厅同步令牌与该服务器不匹配") from exc
+            raise
 
     def _fixed_roles_sync_ok(self, data: dict, address: str, generation: int, wait_for_client: bool) -> None:
         self._fixed_roles_syncing = False
@@ -1150,6 +1354,7 @@ class QuickJoinApp:
         self.status_var.set("正在切换到游戏并检查黑名单……")
         trace_quick_join("preflight-focus-handoff address=%s" % address)
         self.root.iconify()
+        focus_running_game()
         self.root.after(
             ANNOUNCEMENT_FOCUS_DELAY_MS,
             lambda: self._announce_checking_and_query(address, generation, wait_for_client),
@@ -1158,18 +1363,17 @@ class QuickJoinApp:
     def _announce_checking_and_query(self, address: str, generation: int, wait_for_client: bool) -> None:
         if not self._join_active or generation != self._join_generation:
             return
-        # The game's native message queue only renders the latest automatic
-        # notice.  Use an independent, no-focus in-game overlay for the
-        # transient checking state; the final result still uses the verified
-        # native message channel.
         trace_quick_join("preflight-checking-start")
-        try:
-            launch_game_notice("正在进入游戏，检查黑名单中……", CHECKING_NOTICE_OVERLAY_MS)
-        except OSError as exc:
-            self._preflight_notice_failed(exc)
-            return
+        checking_notice = "正在进入游戏，检查黑名单中……"
+        if self.announcement_enabled_var.get() and not self._pre_join_announcement_handled:
+            announcement = self._announcement_value()
+            if announcement:
+                checking_notice += "\n" + announcement
+        if not self._show_lobby_notice(checking_notice, CHECKING_NOTICE_OVERLAY_MS):
+            self.root.deiconify()
+            trace_quick_join("checking-overlay-unavailable; continuing-cloud-query")
+        self._pre_join_announcement_handled = True
         self._blacklist_check_started_at = time.monotonic()
-        self.announcement_status_var.set("已在游戏画面显示：正在检查黑名单")
         self.blacklist_status_var.set("正在核对本机账号与 Linux 实时大厅……")
         self.runner.submit(
             lambda: self._query_cloud_blacklist(address),
@@ -1236,8 +1440,7 @@ class QuickJoinApp:
                 self.stop_auto_join("服务器大厅名单已过期，已停止连接。")
             return
 
-        announcement = self._announcement_value() if self.announcement_enabled_var.get() else ""
-        notice = format_preflight_clear_notice(announcement)
+        notice = format_preflight_clear_notice()
         if not self._send_preflight_result_notice(notice):
             return
         self._pre_join_announcement_handled = True
@@ -1257,7 +1460,7 @@ class QuickJoinApp:
         trace_quick_join("preflight-request-failed reason=%s" % reason)
         notice = "黑名单检查失败，已停止进入服务器；原因：%s" % compact_game_text(reason, 36)
         if self._send_preflight_result_notice(notice):
-            self.blacklist_status_var.set("云端黑名单检查失败，已停止连接")
+            self.blacklist_status_var.set("云端黑名单检查失败，已停止连接：%s" % reason)
             self.stop_auto_join("黑名单检查失败，已停止连接。")
 
     def publish_announcement(self) -> None:
@@ -1285,6 +1488,7 @@ class QuickJoinApp:
         self._save_settings()
         trace_quick_join("manual-notice-focus-handoff")
         self.root.iconify()
+        focus_running_game()
         self.announcement_status_var.set("正在切换到游戏并发布公告……")
         self.root.after(ANNOUNCEMENT_FOCUS_DELAY_MS, self._finish_manual_announcement)
 
@@ -1345,6 +1549,10 @@ class QuickJoinApp:
             self._save_settings()
 
     def _game_executable(self) -> Path | None:
+        running = running_game_executable()
+        if running:
+            self.exe_var.set(str(running))
+            return running
         configured = Path(self.exe_var.get().strip()) if self.exe_var.get().strip() else None
         if configured and configured.is_file():
             return configured
@@ -1442,7 +1650,11 @@ class QuickJoinApp:
                     log_file.seek(self._retry_log_offset)
                     raw = log_file.read()
                     self._retry_log_offset += len(raw)
-                if log_reports_lobby_ready(raw.decode("utf-8", errors="replace")):
+                chunk = raw.decode("utf-8", errors="replace")
+                if self._join_attempt > 0 and log_reports_join_complete(chunk):
+                    self.stop_auto_join("已进入服务器，自动重试已停止。")
+                    return False
+                if log_reports_lobby_ready(chunk):
                     self._retry_requires_fresh_lobby = False
                     self._lobby_ready_since = time.monotonic()
             except OSError:
@@ -1470,6 +1682,8 @@ class QuickJoinApp:
             self.stop_auto_join("客户端已退出，自动重试已停止。")
             return
         if not self._wait_for_safe_lobby():
+            if not self._join_active:
+                return
             self._connector_waits += 1
             if self._connector_waits >= 240:
                 self.stop_auto_join("等待安全重试超时。请让客户端稳定进入船上大厅后再点击进入。")
@@ -1537,6 +1751,9 @@ class QuickJoinApp:
                 chunk = raw.decode("utf-8", errors="replace")
         except OSError:
             pass
+        if log_reports_join_complete(chunk):
+            self.stop_auto_join("已进入服务器，自动重试已停止。")
+            return
         if log_reports_join_failure(chunk):
             self._schedule_safe_retry(address, generation, "服务器暂时拒绝或断开；返回并稳定进入船上大厅后自动重试……")
             return
@@ -1544,15 +1761,7 @@ class QuickJoinApp:
         if log_reports_game_map(chunk):
             self._join_load_seen_at = now
             self.status_var.set("服务器已响应，正在载入地图；已暂停所有连接重试……")
-        if log_reports_join_complete(chunk):
-            self._join_load_seen_at = now
-            self.status_var.set("已进入服务器；确认连接稳定后将自动停止监听……")
-        if self._join_load_seen_at is not None and now - self._join_load_seen_at >= JOIN_STABLE_SECONDS:
-            self._join_active = False
-            self.stop_button.configure(state="disabled")
-            self.status_var.set("已稳定进入服务器，自动重试已停止。")
-            return
-        if now - self._join_attempt_started >= 30:
+        if self._join_load_seen_at is None and now - self._join_attempt_started >= 30:
             self._schedule_safe_retry(address, generation, "本次连接未完成；返回并稳定进入船上大厅后自动重试……")
             return
         self.root.after(500, lambda: self._poll_join_result(address, generation))
@@ -1562,6 +1771,7 @@ def run_self_test() -> int:
     assert normalize_server_address(" 127.0.0.1:9100 ") == "127.0.0.1:9100"
     assert normalize_server_address("example.com:7777") == "example.com:7777"
     assert normalize_server_address("[::1]:7777") == "[::1]:7777"
+    assert normalize_query_token("Abcdefghijklmnopqrstuvwxyz012345_-") == "Abcdefghijklmnopqrstuvwxyz012345_-"
     assert connector_request("127.0.0.1:9100") == {
         "op": "Connect",
         "IP": "127.0.0.1",
@@ -1598,9 +1808,7 @@ def run_self_test() -> int:
     assert preflight_decision({"local_identity_available": True, "lobby_matches": [], "lobby_stale": True}) == "lobby_stale"
     assert preflight_decision({"local_identity_available": True, "lobby_matches": [], "lobby_stale": False}) == "clear"
     assert format_preflight_clear_notice() == "检测完成，未发现黑名单用户。"
-    assert format_preflight_clear_notice("欢迎进入服务器") == "检测完成，未发现黑名单用户。｜公告：欢迎进入服务器"
     assert "\n" not in format_preflight_block_notice(preflight_matches(blocked))
-    assert "\n" not in format_preflight_clear_notice("第一行\n第二行")
     assert normalize_history(["198.51.100.10:9101", "bad", "198.51.100.10:9101", "192.0.2.10:9100"]) == [
         "198.51.100.10:9101",
         "192.0.2.10:9100",
@@ -1634,12 +1842,18 @@ def run_self_test() -> int:
         except ValueError:
             continue
         raise AssertionError("无效地址未被拒绝: %s" % invalid)
+    for invalid_token in ("", "测试查询令牌", "short-token", "token with spaces 12345678901234567890"):
+        try:
+            normalize_query_token(invalid_token)
+        except ValueError:
+            continue
+        raise AssertionError("无效查询令牌未被拒绝")
     print("quick_join self-test: OK")
     return 0
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Dread Hunger 快速进服器")
+    parser = argparse.ArgumentParser(description=QUICK_JOIN_NAME)
     parser.add_argument("--self-test", action="store_true", help="运行无界面自检")
     parser.add_argument("--game-notice", help=argparse.SUPPRESS)
     parser.add_argument("--notice-duration-ms", type=int, default=5000, help=argparse.SUPPRESS)
@@ -1648,6 +1862,7 @@ def main() -> int:
     if args.self_test:
         return run_self_test()
     enable_windows_dpi_awareness()
+    set_windows_app_user_model_id()
     if args.game_notice:
         show_game_notice(args.game_notice, args.notice_duration_ms, args.notice_danger)
         return 0
