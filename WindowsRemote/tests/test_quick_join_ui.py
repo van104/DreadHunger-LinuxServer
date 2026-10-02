@@ -39,7 +39,8 @@ class QuickJoinUiTests(unittest.TestCase):
                     choose_executable=DEFAULT,
                 ) as callbacks:
             app = quick_join.QuickJoinApp(root)
-            root.update_idletasks()
+            root.deiconify()
+            root.update()
             self.assertIn("恐惧饥饿进服器", root.title())
             self.assertIn("2.0.0", root.title())
             self.assertEqual(len(app.pages), 4)
@@ -47,8 +48,8 @@ class QuickJoinUiTests(unittest.TestCase):
             self.assertEqual(app._announcement_value(), settings["announcement_text"])
             self.assertEqual(app._settings_payload(), settings)
             self.assertLessEqual(app.connect_body.winfo_reqheight(), app.connect_canvas.winfo_height())
+            self.assertLessEqual(app.connect_canvas.winfo_height() - app.connect_body.winfo_reqheight(), 24)
             root.geometry("%dx700" % root.winfo_width())
-            root.deiconify()
             root.update()
             self.assertLess(app.connect_canvas.winfo_height(), app.connect_body.winfo_reqheight())
             app.address_entry.event_generate("<MouseWheel>", delta=-120)

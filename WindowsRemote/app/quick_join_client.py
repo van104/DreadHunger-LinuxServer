@@ -850,6 +850,11 @@ class QuickJoinApp:
         self._window_icon = None
         self.runner = AsyncRunner(root)
         self._build()
+        root.update_idletasks()
+        content_height = root.winfo_height() - self.connect_canvas.winfo_height() + self.connect_body.winfo_reqheight()
+        window_height = min(content_height + 12, root.winfo_screenheight() - 100)
+        center_window(root, window_width, window_height)
+        root.minsize(min(round(980 * self.ui_scale), window_width), min(700, window_height))
         self._refresh_process_state()
 
     def _build(self) -> None:
