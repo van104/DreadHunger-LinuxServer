@@ -2,6 +2,8 @@
 
 这里包含两个 Windows 原生客户端：
 
+进服器 2.0.0 可从 GitHub Release 下载 `DreadHungerQuickJoin-v2.0.0.zip`，解压后运行包内的中文 EXE。也提供单独的英文文件名 EXE，程序名称与界面相同。
+
 - `DreadHungerLinuxRemoteManager.exe`：启动、停止、重启 Linux 游戏服，配置游戏参数、管理插件和查看日志。
 - `DreadHungerLinuxGMConsole.exe`：查看在线玩家，发送消息，执行复活、传送、踢人、开军械库和结束对局等 GM 操作；也可按在线玩家一键拉黑，自动记录 Steam/EOS ID，并使用预设或自定义理由。
 - `恐惧饥饿进服器-v2.0.0.exe`：输入游戏服 `IP:端口`，通过客户端已有的 `connect_client_win64.js` 游戏线程命令队列完成直连，不加载 `C:\SGDH\dhpow.dll`，也不需要管理员权限。服务器满员或暂时断开时会在船上大厅恢复稳定后自动重试。新版提供最近 20 条服务器历史、选择/删除/清空、可配置的本地公告、进服前云端黑名单检查，以及大厅职业同步。默认客户端为 `E:\Dread Hunger\DreadHunger.exe`。
