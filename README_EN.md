@@ -156,7 +156,7 @@ sudo firewall-cmd --reload
 
 After you save `server_port` in the server manager, it is automatically synchronized with `game_port` in `deploy_config.json`. Both `dhctl status` and the displayed join address will use the actual game port. If these two values differ after upgrading from an older version, save the configuration once in the server manager.
 
-Players can download `DreadHungerQuickJoin.exe` from the GitHub Release and enter the game address displayed after installation. The quick-join tool still requires compatible copies of `DHConnector.exe` and `dhpow.dll` on the player's computer. This project does not distribute those third-party components.
+Players can download `恐惧饥饿进服器-v2.0.0.exe` from the GitHub Release and enter the game address displayed after installation. The launcher uses the bundled client connection scripts, so no separate `DHConnector.exe` or `dhpow.dll` installation is needed. Restart the game once after installing or updating the connection scripts.
 
 ## Plugin Changes and Upgrades
 

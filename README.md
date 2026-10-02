@@ -156,7 +156,7 @@ sudo firewall-cmd --reload
 
 开服器页面保存 `server_port` 后会自动同步 `deploy_config.json` 中的 `game_port`，`dhctl status` 和进服地址会使用实际游戏端口。升级自旧版后如两处端口不一致，请在开服器页面重新保存一次配置。
 
-玩家从 GitHub Release 下载 `DreadHungerQuickJoin.exe`，输入安装完成时显示的游戏地址即可。快速进服器仍要求玩家电脑已经安装兼容的 `DHConnector.exe` 与 `dhpow.dll`，本项目不会分发这两个第三方组件。
+玩家从 GitHub Release 下载 `恐惧饥饿进服器-v2.0.0.exe`，输入安装完成时显示的游戏地址即可。进服器使用包内的客户端连接脚本，无需额外安装 `DHConnector.exe` 或 `dhpow.dll`；首次安装或更新连接脚本后，请重启游戏一次。
 
 ## 插件修改与升级
 
