@@ -658,7 +658,39 @@ class GMConsole:
             "entries": clean_entries,
         }
 
+    def process_anti_cheat_blacklist_requests(self) -> None:
+        directory = self.runtime_dir / "anti_cheat_blacklist"
+        with self.blacklist_lock:
+            # 只有控制台写正式黑名单，与人工增删共用锁；注入器只投递独立请求。
+            for request_path in directory.glob("*.json"):
+                try:
+                    params = json.loads(request_path.read_text(encoding="utf-8"))
+                    if not isinstance(params, dict) or params.get("type") != "anti_cheat_blacklist":
+                        raise ValueError("反作弊黑名单请求格式错误")
+                    identity = manual_blacklist_identity(params)
+                    if self.blacklist_path.exists():
+                        try:
+                            stored = json.loads(self.blacklist_path.read_text(encoding="utf-8"))
+                        except ValueError as exc:
+                            raise OSError("现有黑名单损坏，保留待处理请求") from exc
+                        if not isinstance(stored, dict) or not isinstance(stored.get("entries"), list):
+                            raise OSError("现有黑名单损坏，保留待处理请求")
+                    existing = self._find_blacklist_entry(identity, self._read_blacklist_unlocked()["entries"])
+                    if existing is None:
+                        self.add_blacklist({**params, "manual": True, "reason_code": "cheating"})
+                    request_path.unlink()
+                    print("[反作弊][黑名单已保存] %s / %s" % (params.get("player"), identity["user_id"]), flush=True)
+                except (ValueError, TypeError) as exc:
+                    print("[反作弊][黑名单请求拒绝] %s / %s" % (request_path.name, exc), flush=True)
+                    try:
+                        request_path.rename(request_path.with_suffix(".rejected"))
+                    except OSError as reject_error:
+                        print("[反作弊][黑名单请求拒绝失败] %s" % reject_error, flush=True)
+                except OSError as exc:
+                    print("[反作弊][黑名单保存失败] %s" % exc, flush=True)
+
     def get_blacklist(self) -> Dict[str, Any]:
+        self.process_anti_cheat_blacklist_requests()
         with self.blacklist_lock:
             data = self._read_blacklist_unlocked()
         entries = sorted(data["entries"], key=lambda item: str(item.get("updated_at") or ""), reverse=True)
@@ -2873,6 +2905,7 @@ def make_handler(console: GMConsole):
 
             self.send_json({"error": "Not found"}, 404)
 
+    Handler.gm_console = console
     return Handler
 
 
@@ -2881,6 +2914,9 @@ class GMHTTPServer(ThreadingHTTPServer):
     request_queue_size = 64
     daemon_threads = True
     allow_reuse_address = True
+
+    def service_actions(self):
+        self.RequestHandlerClass.gm_console.process_anti_cheat_blacklist_requests()
 
 
 def discover_root(explicit: Optional[Path]) -> Path:
@@ -2910,6 +2946,8 @@ def main(argv=None) -> int:
     server = GMHTTPServer((args.host, args.port), make_handler(console))
     print(f"[GM控制台] Dread Hunger GM Console v{VERSION}")
     print(f"[GM控制台] 根目录: {root}")
+    print(f"[GM控制台] 代码路径: {Path(__file__).resolve()}")
+    print(f"[GM控制台] 自动黑名单接收已启用: {console.runtime_dir / 'anti_cheat_blacklist'}")
     print(f"[GM控制台] 面板: http://{args.host}:{args.port}")
     print("[GM控制台] 认证: 已启用（密码不会写入日志）")
     print(f"[GM控制台] 指令文件: {console.command_path}")

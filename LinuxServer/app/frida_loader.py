@@ -13,8 +13,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -67,6 +69,7 @@ def get_log_candidates(root_dir: Path, pid: int) -> List[Path]:
         root_dir / "output.log",
         root_dir / "server.log",
         root_dir / "DreadHunger" / "Binaries" / "Linux" / "output.log",
+        root_dir / "DreadHunger" / "log" / "DreadHunger.log",
         root_dir / "DreadHunger" / "Saved" / "Logs" / "DreadHunger.log",
         root_dir / "DreadHunger" / "Binaries" / "Linux" / "player.log",
     ]
@@ -115,6 +118,12 @@ MATCH_END_MARKERS = (
     b"FPlatformMisc::RequestExit",
 )
 
+ANTI_CHEAT_LOG = re.compile(
+    r"LogDHAntiCheat:\s+(?:Warning:\s+)?(?P<player>.+?)\s+was found to be using the cheat\s+\[(?P<cheat>[^\]]+)\](?P<detail>.*)"
+)
+ANTI_CHEAT_EVENTS_FILE = ".gm_runtime/anti_cheat_events.json"
+ANTI_CHEAT_EVENT_LIMIT = 200
+
 
 def capture_log_offsets(root_dir: Path, pid: int) -> Dict[Path, int]:
     """记录注入完成时的日志位置，避免把上一局的结算日志当成当前对局。"""
@@ -127,8 +136,30 @@ def capture_log_offsets(root_dir: Path, pid: int) -> Dict[Path, int]:
     return offsets
 
 
-def match_end_detected(root_dir: Path, pid: int, offsets: Dict[Path, int]) -> bool:
-    """只读取注入后新增的日志；进入结算后尽快解除 Hook，避免卡在 CleanupWorld。"""
+def parse_anti_cheat_events(data: bytes, log_path: Path, start_offset: int) -> List[dict]:
+    """将游戏原生反作弊日志转换为供插件消费的最小事件。"""
+    events = []
+    text = data.decode("utf-8", "replace")
+    for line_number, line in enumerate(text.splitlines()):
+        match = ANTI_CHEAT_LOG.search(line)
+        if not match:
+            continue
+        detail = match.group("detail").strip()
+        events.append(
+            {
+                "id": "%s:%d:%d" % (str(log_path), start_offset, line_number),
+                "player_name": match.group("player").strip(),
+                "cheat_type": match.group("cheat").strip(),
+                "detail": detail,
+            }
+        )
+    return events
+
+
+def scan_server_log(root_dir: Path, pid: int, offsets: Dict[Path, int]) -> tuple[bool, List[dict]]:
+    """只读取注入后新增日志，并同时检查结算和原生反作弊事件。"""
+    match_ended = False
+    anti_cheat_events = []
     for log_path in get_log_candidates(root_dir, pid):
         try:
             size = log_path.stat().st_size
@@ -140,10 +171,10 @@ def match_end_detected(root_dir: Path, pid: int, offsets: Dict[Path, int]) -> bo
             offsets[log_path] = size
             continue
 
-        start = 0 if size < previous else previous
+        previous = 0 if size < previous else previous
+        start = previous
         # 异常日志爆量时只扫描最后 512 KiB，避免监控线程反过来制造 I/O 压力。
         start = max(start, size - 512 * 1024)
-        offsets[log_path] = size
         if size <= start:
             continue
         try:
@@ -152,9 +183,52 @@ def match_end_detected(root_dir: Path, pid: int, offsets: Dict[Path, int]) -> bo
                 data = log_file.read(size - start)
         except OSError:
             continue
+        # 读成功后才移动游标；半行（包括 UTF-8 半个字符）留给下一次读取。
+        if start > previous:
+            # 截断的大段日志开头可能只是半行，不能当成完整检测事件。
+            first_end = data.find(b"\n")
+            if first_end < 0:
+                offsets[log_path] = start + len(data)
+                continue
+            start += first_end + 1
+            data = data[first_end + 1:]
+        last_end = data.rfind(b"\n")
+        if last_end < 0:
+            offsets[log_path] = start
+            continue
+        data = data[:last_end + 1]
+        offsets[log_path] = start + len(data)
         if any(marker in data for marker in MATCH_END_MARKERS):
-            return True
-    return False
+            match_ended = True
+        anti_cheat_events.extend(parse_anti_cheat_events(data, log_path, start))
+    return match_ended, anti_cheat_events
+
+
+def match_end_detected(root_dir: Path, pid: int, offsets: Dict[Path, int]) -> bool:
+    """兼容现有调用：只返回对局结束状态。"""
+    match_ended, _ = scan_server_log(root_dir, pid, offsets)
+    return match_ended
+
+
+def write_anti_cheat_events(root_dir: Path, events: List[dict], reset: bool = False) -> None:
+    """原子写入事件队列；旧局事件不会在新注入会话里再次公告。"""
+    runtime_dir = root_dir / ".gm_runtime"
+    event_file = root_dir / ANTI_CHEAT_EVENTS_FILE
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+
+    existing = []
+    if not reset:
+        try:
+            parsed = json.loads(event_file.read_text(encoding="utf-8"))
+            if isinstance(parsed, dict) and isinstance(parsed.get("events"), list):
+                existing = parsed["events"]
+        except (OSError, ValueError, TypeError):
+            pass
+
+    payload = {"events": (existing + events)[-ANTI_CHEAT_EVENT_LIMIT:]}
+    temporary = event_file.with_suffix(".tmp")
+    temporary.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    temporary.replace(event_file)
 
 
 def wait_for_server_ready(root_dir: Path, pid: int, max_wait_sec: float = 25.0) -> None:
@@ -196,7 +270,16 @@ def prepare_plugin_source(script_path: Path, root_dir: Path) -> str:
     return "var DH_LINUX_ROOT = %s;\n%s" % (json.dumps(str(root_dir), ensure_ascii=False), source)
 
 
+def select_plugin_paths(plugins_dir: Path) -> list[Path]:
+    paths = sorted(plugins_dir.glob("*.js"))
+    if any(path.name == "[服务端]反作弊物资_v2_Linux.js" for path in paths):
+        paths = [path for path in paths if path.name != "[服务端]反作弊物资_Linux.js"]
+    return paths
+
+
 def load_plugins(root_dir: Path, plugins_dir: Path) -> None:
+    log("注入器代码路径: %s" % Path(__file__).resolve())
+    log("反作弊黑名单桥接已启用: %s" % (root_dir / ".gm_runtime/anti_cheat_blacklist"))
     waiting_for_server_logged = False
     while True:
         pid = find_server_pid()
@@ -222,7 +305,9 @@ def load_plugins(root_dir: Path, plugins_dir: Path) -> None:
             continue
 
         # 每次建立 Frida 会话前重新扫描插件目录。
-        script_paths = sorted(plugins_dir.glob("*.js"))
+        script_paths = select_plugin_paths(plugins_dir)
+        if any(path.name == "[服务端]反作弊物资_v2_Linux.js" for path in script_paths):
+            log("反作弊 v2 已启用，跳过 v1 开发版，避免重复检测和重复踢人")
         if any(path.name == "[服务端]随机职业Plus_Linux.js" for path in script_paths):
             script_paths = [path for path in script_paths if path.name != "[服务端]固定职业_Linux.js"]
             log("随机职业已启用，跳过固定职业插件；关闭随机职业后可使用大厅固定职业")
@@ -241,7 +326,7 @@ def load_plugins(root_dir: Path, plugins_dir: Path) -> None:
             try:
                 source = prepare_plugin_source(script_path, root_dir)
                 script = session.create_script(source)
-                script.on("message", lambda message, data, name=script_path.name: on_message(name, message, data))
+                script.on("message", lambda message, data, name=script_path.name: on_message(name, message, data, root_dir))
                 script.load()
                 scripts.append((script_path.name, script))
             except Exception as exc:
@@ -252,10 +337,15 @@ def load_plugins(root_dir: Path, plugins_dir: Path) -> None:
 
         log("插件注入完成: %d/%d，正在监听..." % (len(scripts), len(script_paths)))
         log_offsets = capture_log_offsets(root_dir, pid)
+        write_anti_cheat_events(root_dir, [], reset=True)
         detach_for_match_end = False
         try:
             while find_server_pid() == pid:
-                if match_end_detected(root_dir, pid, log_offsets):
+                match_ended, anti_cheat_events = scan_server_log(root_dir, pid, log_offsets)
+                if anti_cheat_events:
+                    write_anti_cheat_events(root_dir, anti_cheat_events)
+                    log("捕获 %d 条游戏原生反作弊事件" % len(anti_cheat_events))
+                if match_ended:
                     detach_for_match_end = True
                     log("检测到对局结束，正在主动卸载插件并解除注入...")
                     break
@@ -279,12 +369,35 @@ def load_plugins(root_dir: Path, plugins_dir: Path) -> None:
         return
 
 
-def on_message(script_name: str, message: dict, data: bytes | None) -> None:
+def queue_anti_cheat_blacklist(root_dir: Path, payload: dict) -> None:
+    directory = root_dir / ".gm_runtime" / "anti_cheat_blacklist"
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / (uuid.uuid4().hex + ".json")
+    temporary = target.with_suffix(".tmp")
+    try:
+        temporary.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def on_message(script_name: str, message: dict, data: bytes | None, root_dir: Path | None = None) -> None:
     level = message.get("type", "?")
     if level == "error":
         log("[%s] 错误: %s" % (script_name, message.get("stack", message.get("description", ""))))
     elif level == "send":
-        log("[%s] %s" % (script_name, json.dumps(message.get("payload"), ensure_ascii=False)))
+        payload = message.get("payload")
+        if isinstance(payload, dict) and payload.get("type") == "anti_cheat_blacklist":
+            # 按请求类型路由；允许重命名插件或沿用三参数回调的外部启动方式。
+            blacklist_root = root_dir if root_dir is not None else discover_root(None)
+            try:
+                queue_anti_cheat_blacklist(blacklist_root, payload)
+                log("[反作弊][黑名单待保存] %s / %s / %s" %
+                    (payload.get("player"), payload.get("reason"), blacklist_root / ".gm_runtime/anti_cheat_blacklist"))
+            except OSError as exc:
+                log("[反作弊][黑名单排队失败] %s / %s" % (blacklist_root, exc))
+            return
+        log("[%s] %s" % (script_name, json.dumps(payload, ensure_ascii=False)))
     else:
         log("[%s] %s" % (script_name, message))
 
@@ -292,7 +405,12 @@ def on_message(script_name: str, message: dict, data: bytes | None) -> None:
 def discover_root(explicit: Path | None) -> Path:
     if explicit is not None:
         return explicit.expanduser().resolve()
-    for candidate in [Path.cwd(), Path(__file__).resolve().parent, Path(__file__).resolve().parent.parent]:
+    source_root = Path(__file__).resolve().parent
+    if source_root.name == "app":
+        source_root = source_root.parent
+    for candidate in [Path.cwd(), source_root, source_root.parent]:
+        if candidate == Path(__file__).resolve().parent and candidate.name == "app":
+            continue
         if (candidate / "Linux 插件").is_dir() or (candidate / "DreadHunger").is_dir():
             return candidate.resolve()
     return Path.cwd().resolve()
@@ -311,7 +429,7 @@ def main() -> int:
         print("错误: 插件目录不存在: %s" % plugins_dir)
         return 1
 
-    paths = sorted(plugins_dir.glob("*.js"))
+    paths = select_plugin_paths(plugins_dir)
     if not paths:
         print("错误: 插件目录没有 .js 文件: %s" % plugins_dir)
         return 1

@@ -837,6 +837,7 @@ class ServerManager:
         paths.extend(
             [
                 self.root / "DreadHunger" / "Binaries" / "Linux" / "output.log",
+                self.root / "DreadHunger" / "log" / "DreadHunger.log",
                 self.root / "DreadHunger" / "Saved" / "Logs" / "DreadHunger.log",
                 self.root / "DreadHunger" / "Binaries" / "Linux" / "player.log",
                 self.root / "output.log",
